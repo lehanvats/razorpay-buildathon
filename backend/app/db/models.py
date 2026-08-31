@@ -10,10 +10,11 @@ Money is stored in paise as an integer everywhere. Never float, never rupees.
 Timestamps are timezone-aware UTC in the column; IST is a presentation
 concern (the salary-window rule reasons in IST — see policy/rules.py).
 
-Step-01 implements `webhook_events` only. The other four tables are fenced
-off below rather than half-declared: a class inheriting Base with no primary
-key raises at import time, and a partially-declared table would produce a
-migration that lies about what step-01 delivers.
+Step-01 implemented `webhook_events`; step-02 adds `cases`. `actions`,
+`audit_events` and `outcomes` are still fenced off below rather than
+half-declared: a class inheriting Base with no primary key raises at import
+time, and a partially-declared table would produce a migration that lies
+about what a given step delivers.
 """
 
 from datetime import datetime
@@ -24,6 +25,72 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class Case(Base):
+    """The unit everything else operates on.
+
+    Opened by a `payment.failed` event. `failure_class` and `arm` are written
+    once at creation and never recomputed — a case is audited under the class
+    and arm it was actually acted on.
+
+    `failure_class` and `arm` are stored as plain strings, not a native
+    Postgres enum: adding a class later is then a code change, not a
+    migration. Money is paise, integer, never float (see module docstring).
+
+    `status`: open | scheduled | awaiting_customer | recovered | escalated |
+    exhausted | control_observed.
+    """
+
+    __tablename__ = "cases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+
+    razorpay_order_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    """One case per order. Razorpay allows several payment attempts against
+    one Order before it settles, so a repeat `payment.failed` for an order
+    that already has a case must not open a second one — the UNIQUE
+    constraint is the backstop for that, not just the read-check-write in
+    services/case_manager.py."""
+
+    razorpay_payment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    """The payment attempt that opened the case. Later retries get their own
+    `actions.razorpay_ref`, not a new case."""
+
+    customer_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+
+    amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_mandate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    """True for subscription / e-mandate / UPI AutoPay debits. Gates the RBI
+    24-hour pre-debit notification rule."""
+
+    failure_class: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    failure_reason_raw: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    """Razorpay's `error_reason` verbatim — kept alongside the derived class
+    so a taxonomy change can be audited against what was actually observed."""
+
+    arm: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open", index=True)
+    attempts_used: Mapped[int] = mapped_column(nullable=False, default=1)
+    """Charge attempts spent so far, original included. NPCI caps AutoPay at
+    1 original + 3 retries — see policy/rules.py:MAX_CHARGE_ATTEMPTS."""
+
+    messages_sent: Mapped[int] = mapped_column(nullable=False, default=0)
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pre_debit_notice_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    discount_offered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<Case {self.id} {self.failure_class}/{self.arm}>"
 
 
 class WebhookEvent(Base):
@@ -63,9 +130,7 @@ class WebhookEvent(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    processed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     """NULL until the case manager has handled it. A crash between insert and
     dispatch leaves a replayable row rather than a lost event."""
 
@@ -74,33 +139,10 @@ class WebhookEvent(Base):
 
 
 # --------------------------------------------------------------------------
-# TODO(step-02/03/06/07): the case tables.
+# TODO(step-03/06/07): the remaining case tables.
 #
 # Deliberately commented out rather than declared empty. Uncomment each class
 # in its step and add columns; the shape below is the agreed schema.
-#
-# class Case(Base):
-#     """The unit everything else operates on.
-#
-#     Opened by a `payment.failed` event. `failure_class` and `arm` are written
-#     once at creation and never recomputed — a case is audited under the class
-#     and arm it was actually acted on.
-#
-#     Columns:
-#         id (uuid), razorpay_order_id, razorpay_payment_id, customer_email,
-#         amount_paise, currency, method, is_mandate,
-#         failure_class, failure_reason_raw,
-#         arm, status, attempts_used, messages_sent,
-#         last_contact_at, pre_debit_notice_sent_at, discount_offered,
-#         created_at, closed_at
-#
-#     `status`: open | scheduled | awaiting_customer | recovered | escalated |
-#     exhausted | control_observed.
-#     """
-#
-#     __tablename__ = "cases"
-#     # TODO(step-02): columns + indexes on (arm), (status), (failure_class)
-#
 #
 # class Action(Base):
 #     """One approved, scheduled or executed intervention.
