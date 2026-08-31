@@ -9,6 +9,7 @@
 # Usage:
 #   docker run -d --name recoup-pg -e POSTGRES_PASSWORD=recoup \
 #     -e POSTGRES_USER=recoup -e POSTGRES_DB=recoup -p 55432:5432 postgres:16-alpine
+#   cp .env.example .env   # then set DATABASE_URL and RAZORPAY_WEBHOOK_SECRET
 #   .venv/bin/alembic upgrade head
 #   ./scripts/e2e_step01.sh
 #
@@ -21,7 +22,7 @@ cd "$BACKEND" || exit 1
 PG_CONTAINER="${PG_CONTAINER:-recoup-pg}"
 PG_USER="${PG_USER:-recoup}"
 PG_DB="${PG_DB:-recoup}"
-SECRET="${RAZORPAY_WEBHOOK_SECRET:-$(grep -E '^RAZORPAY_WEBHOOK_SECRET=' .env | cut -d= -f2-)}"
+SECRET="${RAZORPAY_WEBHOOK_SECRET:-$(grep -E '^RAZORPAY_WEBHOOK_SECRET=' .env 2>/dev/null | cut -d= -f2-)}"
 PORT="${PORT:-8123}"
 URL="http://127.0.0.1:${PORT}/api/webhooks/razorpay"
 
@@ -39,6 +40,24 @@ check() {
     FAILURES=$((FAILURES + 1))
   fi
 }
+
+if [ -z "$SECRET" ]; then
+  echo "RAZORPAY_WEBHOOK_SECRET is unset and backend/.env has no value for it." >&2
+  echo "Create backend/.env (see .env.example), or export RAZORPAY_WEBHOOK_SECRET." >&2
+  exit 1
+fi
+
+if ! docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -tAc 'SELECT 1' > /dev/null 2>&1; then
+  echo "Cannot reach Postgres in container '$PG_CONTAINER' as $PG_USER/$PG_DB." >&2
+  echo "Start it:  docker run -d --name recoup-pg -e POSTGRES_PASSWORD=recoup \\" >&2
+  echo "             -e POSTGRES_USER=recoup -e POSTGRES_DB=recoup -p 55432:5432 postgres:16-alpine" >&2
+  exit 1
+fi
+
+if ! docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -tAc 'SELECT 1 FROM webhook_events LIMIT 1' > /dev/null 2>&1; then
+  echo "Table webhook_events is missing. Run:  .venv/bin/alembic upgrade head" >&2
+  exit 1
+fi
 
 # Non-canonical JSON on purpose: whitespace that `json.dumps` would not
 # reproduce. An implementation that verifies against a re-serialised dict
