@@ -6,16 +6,34 @@ connections between bursts.
 """
 
 from collections.abc import Iterator
-from typing import Any
 
-# TODO(step-01): create_engine(settings.database_url, pool_pre_ping=True)
-engine: Any = None
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-# TODO(step-01): sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-SessionLocal: Any = None
+from app.config import settings
+
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
+    future=True,
+)
+"""`pool_pre_ping` costs one round-trip per checkout and buys immunity to
+Neon dropping idle connections — the alternative is an intermittent
+OperationalError on the first request after a quiet period."""
+
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    expire_on_commit=False,
+    class_=Session,
+)
+"""`expire_on_commit=False` so a route can still read an object's attributes
+after commit without a second SELECT."""
 
 
-def get_db() -> Iterator[Any]:
+def get_db() -> Iterator[Session]:
     """FastAPI dependency yielding a session per request.
 
     The caller owns the transaction: routes commit explicitly. Audit writes
@@ -23,4 +41,8 @@ def get_db() -> Iterator[Any]:
     that a rolled-back action cannot leave a phantom audit event claiming it
     happened.
     """
-    raise NotImplementedError("step-01: database session")
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
