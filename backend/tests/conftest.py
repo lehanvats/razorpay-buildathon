@@ -4,16 +4,119 @@ Note the split: policy and taxonomy tests need no fixtures at all — they are
 pure functions over plain data. Only the webhook and metrics tests touch a
 database. Keep it that way; the moment the gate needs a fixture, it has
 stopped being pure.
+
+Environment is pinned here, before any `app.*` import, because
+`app.config.settings` is instantiated at import time. Tests therefore never
+depend on whatever is in the developer's `.env`.
 """
+
+import os
+from collections.abc import Iterator
 
 import pytest
 
+TEST_WEBHOOK_SECRET = "test_webhook_secret"
+
+DEFAULT_TEST_DATABASE_URL = (
+    "postgresql+psycopg://recoup:recoup@localhost:55432/recoup_test"
+)
+
+# Must happen before `app.config` is imported anywhere. Real env vars take
+# precedence over the .env file in pydantic-settings, so this wins.
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL
+)
+os.environ["RAZORPAY_WEBHOOK_SECRET"] = TEST_WEBHOOK_SECRET
+
+from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+
+
+def _ensure_test_database() -> None:
+    """Create the test database if it does not exist.
+
+    Connects to the `postgres` maintenance database, since you cannot CREATE
+    DATABASE from inside the database being created. AUTOCOMMIT because
+    Postgres refuses CREATE DATABASE inside a transaction block.
+    """
+    url = make_url(os.environ["DATABASE_URL"])
+    admin_url = url.set(database="postgres")
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        exists = conn.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :name"),
+            {"name": url.database},
+        ).scalar()
+        if not exists:
+            conn.execute(text(f'CREATE DATABASE "{url.database}"'))
+    admin.dispose()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _migrated_database() -> None:
+    """Bring the test database to head.
+
+    Runs the real Alembic migrations rather than `Base.metadata.create_all`,
+    so a migration that does not match the models fails the suite instead of
+    failing the first deploy.
+    """
+    from alembic.config import Config
+
+    from alembic import command
+
+    _ensure_test_database()
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "head")
+
 
 @pytest.fixture
-def db_session():
+def db_session(_migrated_database: None) -> Iterator[Session]:
     """Transactional session against a throwaway database, rolled back after
-    each test."""
-    raise NotImplementedError("step-01: test database fixture")
+    each test.
+
+    The session joins an outer transaction via SAVEPOINT, so code under test
+    can call `commit()` for real — the webhook route does — and the outer
+    rollback still leaves the database untouched between tests.
+    """
+    from app.db.session import engine
+
+    connection = engine.connect()
+    transaction = connection.begin()
+    factory = sessionmaker(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    session = factory()
+    try:
+        yield session
+    finally:
+        session.close()
+        transaction.rollback()
+        connection.close()
+
+
+@pytest.fixture
+def client(db_session: Session) -> Iterator[object]:
+    """TestClient wired to the per-test transactional session.
+
+    Overriding `get_db` rather than pointing the app at a second connection
+    matters: the test asserts on rows the request wrote, and two connections
+    would not see each other's uncommitted work.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.db.session import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture
