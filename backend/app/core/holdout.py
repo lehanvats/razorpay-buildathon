@@ -48,7 +48,9 @@ def assign_arm(case_id: str) -> Arm:
     Returns:
         Arm.CONTROL for ~20% of ids, Arm.TREATMENT otherwise.
     """
-    raise NotImplementedError("step-03: holdout assignment")
+    digest = hashlib.sha256(case_id.encode()).digest()
+    bucket = int.from_bytes(digest[:8], "big") % CONTROL_BUCKET_MODULUS
+    return Arm.CONTROL if bucket == 0 else Arm.TREATMENT
 
 
 def is_actionable(arm: Arm) -> bool:
@@ -62,4 +64,4 @@ def is_actionable(arm: Arm) -> bool:
     number becomes a lie in our own favour. See services/case_manager.py for
     the branch point.
     """
-    raise NotImplementedError("step-03: holdout assignment")
+    return arm == Arm.TREATMENT
