@@ -7,7 +7,26 @@ policy/rules.py so that changing one is a visible code change with a
 reviewer, not an env var flipped at 2am.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _with_psycopg_driver(url: str) -> str:
+    """Force the psycopg 3 driver onto a bare Postgres URL.
+
+    Neon (like most managed providers) hands out connection strings scheme'd
+    `postgresql://` or `postgres://`. SQLAlchemy reads that as "use the
+    default driver", which is psycopg2 — a package this project does not
+    install. The failure is an ImportError at engine construction, far from
+    the pasted string that caused it.
+
+    Normalising here means a URL can be pasted from the Neon dashboard
+    verbatim. An already-qualified URL (`+psycopg`, `+asyncpg`) is untouched.
+    """
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
+    return url
 
 
 class Settings(BaseSettings):
@@ -17,7 +36,25 @@ class Settings(BaseSettings):
 
     # --- Database ---
     database_url: str = "postgresql+psycopg://localhost/recoup"
-    """Neon Postgres connection string. Use the pooled endpoint."""
+    """Neon Postgres connection string. Use the pooled endpoint (`-pooler` in
+    the host): request handlers are short-lived and want PgBouncer in front."""
+
+    database_url_unpooled: str = ""
+    """Neon's direct endpoint, used for migrations. Alembic holds
+    session-scoped state — an advisory lock, and DDL spanning several
+    statements — that transaction-mode pooling does not preserve, and the
+    resulting failures are intermittent rather than clean. Empty falls back
+    to `database_url`, which is right for a plain Postgres with no pooler."""
+
+    @field_validator("database_url", "database_url_unpooled")
+    @classmethod
+    def _normalise_driver(cls, v: str) -> str:
+        return _with_psycopg_driver(v)
+
+    @property
+    def migration_database_url(self) -> str:
+        """The URL Alembic should use: direct if configured, else pooled."""
+        return self.database_url_unpooled or self.database_url
 
     # --- Razorpay (test mode only) ---
     razorpay_key_id: str = ""

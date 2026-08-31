@@ -4,6 +4,10 @@ Imports `Base.metadata` from app.db.base rather than from app.main, so
 running a migration does not construct the FastAPI app or its network
 clients. Reads the database URL from app.config.settings — never from
 alembic.ini — so no connection string is ever committed.
+
+Uses `settings.migration_database_url`, which prefers Neon's *direct*
+endpoint over the pooled one. Migrations hold session-scoped state that
+PgBouncer's transaction pooling does not preserve.
 """
 
 from logging.config import fileConfig
@@ -20,7 +24,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.migration_database_url)
 
 target_metadata = Base.metadata
 
@@ -28,7 +32,7 @@ target_metadata = Base.metadata
 def run_migrations_offline() -> None:
     """Emit SQL to stdout without a live connection (`alembic upgrade --sql`)."""
     context.configure(
-        url=settings.database_url,
+        url=settings.migration_database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
