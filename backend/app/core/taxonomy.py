@@ -32,23 +32,42 @@ class FailureClass(str, Enum):
     DROPOFF = "DROPOFF"
 
 
-# Razorpay error_reason / error_code fragments -> FailureClass.
+# Razorpay error_reason fragments -> FailureClass.
 # Kept as data rather than branches so the mapping is reviewable by a
 # non-Python reader and testable row by row.
 #
-# TODO(step-02): populate from Razorpay's published error code list.
 # Anything unmatched MUST fall through to SOFT_TECHNICAL, never to
 # HARD_DECLINE — misclassifying a recoverable failure as hard silently loses
 # revenue, whereas the reverse only costs one retry that the attempt budget
-# already caps.
+# already caps. Not exhaustive against Razorpay's full published list; widen
+# this table against real `error_reason` values as the step-08 seeder and
+# live test-mode traffic surface them.
 _REASON_MAP: dict[str, FailureClass] = {
-    # "card_stolen_or_lost": FailureClass.HARD_DECLINE,
-    # "mandate_revoked": FailureClass.HARD_DECLINE,
-    # "payment_frequency_limit_exceeded": FailureClass.HARD_DECLINE,
-    # "insufficient_funds": FailureClass.SOFT_FUNDS,
-    # "gateway_technical_error": FailureClass.SOFT_TECHNICAL,
-    # "bank_not_responding": FailureClass.SOFT_TECHNICAL,
-    # "payment_timed_out": FailureClass.DROPOFF,
+    # Unrecoverable by design — never spend an attempt, never message.
+    "card_stolen_or_lost": FailureClass.HARD_DECLINE,
+    "mandate_revoked": FailureClass.HARD_DECLINE,
+    "payment_frequency_limit_exceeded": FailureClass.HARD_DECLINE,
+    "restricted_card": FailureClass.HARD_DECLINE,
+    "invalid_card": FailureClass.HARD_DECLINE,
+    "expired_card": FailureClass.HARD_DECLINE,
+    "card_blacklisted": FailureClass.HARD_DECLINE,
+    "fraudulent": FailureClass.HARD_DECLINE,
+    # Insufficient balance — a timing problem, salary-window scheduling.
+    "insufficient_funds": FailureClass.SOFT_FUNDS,
+    # Bank/gateway timeout or downtime — wait out the degraded rail.
+    "gateway_technical_error": FailureClass.SOFT_TECHNICAL,
+    "bank_not_responding": FailureClass.SOFT_TECHNICAL,
+    "issuer_unavailable": FailureClass.SOFT_TECHNICAL,
+    "issuer_down": FailureClass.SOFT_TECHNICAL,
+    "issuer_timeout": FailureClass.SOFT_TECHNICAL,
+    "internal_error": FailureClass.SOFT_TECHNICAL,
+    "server_error": FailureClass.SOFT_TECHNICAL,
+    "gateway_error": FailureClass.SOFT_TECHNICAL,
+    # Customer abandoned the flow — a persuasion problem, never an auto-charge.
+    "payment_timed_out": FailureClass.DROPOFF,
+    "payment_cancelled": FailureClass.DROPOFF,
+    "otp_timeout": FailureClass.DROPOFF,
+    "authentication_failed": FailureClass.DROPOFF,
 }
 
 #: Classes on which no charge attempt may ever be made. Consumed by
@@ -71,4 +90,5 @@ def classify(payment_entity: dict) -> FailureClass:
     changes, historical cases keep the class they were actually acted on
     under.
     """
-    raise NotImplementedError("step-02: case model and failure taxonomy")
+    reason = (payment_entity.get("error_reason") or "").strip().lower()
+    return _REASON_MAP.get(reason, FailureClass.SOFT_TECHNICAL)
