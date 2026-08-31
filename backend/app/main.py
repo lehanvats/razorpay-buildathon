@@ -7,7 +7,15 @@ rather than as a background task here, so restarting the API never drops a
 pending retry.
 """
 
+import logging
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routes import webhooks
+from app.config import settings
+
+logging.basicConfig(level=logging.INFO)
 
 
 def create_app() -> FastAPI:
@@ -20,7 +28,35 @@ def create_app() -> FastAPI:
         /api/escalations human review queue
         /api/demo       seeder + customer simulator (demo_mode only)
     """
-    raise NotImplementedError("step-01: app factory")
+    app = FastAPI(
+        title="Recoup",
+        description="Payment-failure recovery agent. The LLM proposes; the "
+        "policy gate is the sole path to any money action.",
+        version="0.1.0",
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(webhooks.router)
+    # TODO(step-07/08): cases, dashboard, escalations, demo routers.
+
+    @app.get("/health", tags=["ops"])
+    def health() -> dict[str, str]:
+        """Liveness only — deliberately does not touch the database.
+
+        A health check that fails on a database blip invites an orchestrator
+        to restart a process that is fine, turning a transient outage into a
+        restart loop.
+        """
+        return {"status": "ok"}
+
+    return app
 
 
 app = create_app()
