@@ -15,13 +15,20 @@ from app.config import settings
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
+    pool_recycle=280,
     pool_size=5,
     max_overflow=5,
     future=True,
 )
 """`pool_pre_ping` costs one round-trip per checkout and buys immunity to
 Neon dropping idle connections — the alternative is an intermittent
-OperationalError on the first request after a quiet period."""
+OperationalError on the first request after a quiet period. Verified by
+terminating a pooled connection server-side: with pre-ping the next checkout
+reconnects transparently, without it the checkout raises.
+
+`pool_recycle` retires a connection before Neon's compute suspends (~5 min
+idle on the free tier), so the common case never reaches the pre-ping repair
+path at all."""
 
 SessionLocal = sessionmaker(
     bind=engine,
