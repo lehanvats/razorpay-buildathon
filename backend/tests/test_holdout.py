@@ -5,9 +5,13 @@ control group being a genuine random-but-stable 20% sample. These tests are
 not optional polish.
 """
 
+import os
+import subprocess
+import sys
+
 import pytest
 
-pytestmark = pytest.mark.skip(reason="step-03 not implemented")
+from app.core.holdout import CONTROL_BUCKET_MODULUS, Arm, assign_arm, is_actionable
 
 
 def test_assignment_is_stable_across_processes():
@@ -20,6 +24,23 @@ def test_assignment_is_stable_across_processes():
     Run assignment in a subprocess with a different PYTHONHASHSEED and assert
     the arm matches this process's answer for the same ids.
     """
+    case_ids = ["case_a", "case_b", "case_c", "case_stability_check"]
+    expected = [assign_arm(cid).value for cid in case_ids]
+
+    script = (
+        "from app.core.holdout import assign_arm; "
+        "print(','.join(assign_arm(c).value for c in "
+        f"{case_ids!r}))"
+    )
+    env = {**os.environ, "PYTHONHASHSEED": "999"}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    assert result.stdout.strip().split(",") == expected
 
 
 def test_distribution_is_approximately_twenty_percent():
@@ -28,16 +49,27 @@ def test_distribution_is_approximately_twenty_percent():
     Allow a tolerance band; assert it is neither ~0% (assignment broken) nor
     ~50% (wrong modulus).
     """
+    n = 10_000
+    control_count = sum(1 for i in range(n) if assign_arm(f"case_{i}") is Arm.CONTROL)
+    fraction = control_count / n
+    expected = 1 / CONTROL_BUCKET_MODULUS
+    assert expected - 0.03 < fraction < expected + 0.03
 
 
 def test_same_id_always_same_arm():
     """Idempotence: repeated calls agree."""
+    for case_id in ("case_x", "case_y", "case_z"):
+        first = assign_arm(case_id)
+        assert all(assign_arm(case_id) == first for _ in range(50))
 
 
 def test_control_cases_are_never_actionable():
     """is_actionable(CONTROL) is False, unconditionally."""
+    assert is_actionable(Arm.CONTROL) is False
+    assert is_actionable(Arm.TREATMENT) is True
 
 
+@pytest.mark.skip(reason="step-03 not implemented — needs the outcomes table")
 def test_control_outcomes_are_still_measured():
     """The holdout gates actions, not measurement.
 

@@ -118,9 +118,11 @@ echo "== 3. corrupted signature =="
 check "status code" 400 "$(post "$(printf '0%.0s' $(seq 64))" evt_E2E02)"
 check "no row written" 1 "$(count)"
 
-echo "== 4. stored payload is verbatim and unprocessed =="
+echo "== 4. stored payload is verbatim and processed =="
 check "event_type" payment.failed "$(psql_q "SELECT event_type FROM webhook_events;")"
-check "processed_at null" t "$(psql_q "SELECT processed_at IS NULL FROM webhook_events;")"
+# Stamped once the case manager (step-02) claims it — was NULL through step-01.
+check "processed_at set" t "$(psql_q "SELECT processed_at IS NOT NULL FROM webhook_events;")"
+check "case opened" 1 "$(psql_q "SELECT count(*) FROM cases;")"
 check "payload amount preserved" 149900 \
   "$(psql_q "SELECT payload_json->'payload'->'payment'->'entity'->>'amount' FROM webhook_events;")"
 

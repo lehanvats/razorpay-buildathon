@@ -4,7 +4,7 @@ import json
 
 from sqlalchemy import func, select
 
-from app.db.models import WebhookEvent
+from app.db.models import Case, WebhookEvent
 from app.integrations.razorpay_client import sign_payload
 from tests.conftest import TEST_WEBHOOK_SECRET
 
@@ -93,9 +93,7 @@ def test_signature_computed_over_raw_bytes_not_reserialised_json(client, db_sess
     rejected = client.post(
         URL,
         content=RAW_PAYMENT_FAILED,
-        headers=_headers(
-            RAW_PAYMENT_FAILED, event_id="evt_TEST0002", signature=over_reserialised
-        ),
+        headers=_headers(RAW_PAYMENT_FAILED, event_id="evt_TEST0002", signature=over_reserialised),
     )
     assert rejected.status_code == 400
     assert _row_count(db_session) == 1
@@ -141,11 +139,34 @@ def test_raw_payload_stored_before_processing(client, db_session):
     assert event.event_type == "payment.failed"
     assert event.signature_valid is True
     assert event.received_at is not None
-    # Unprocessed until the case manager (step-02) claims it — the marker
-    # that makes an interrupted delivery replayable rather than lost.
-    assert event.processed_at is None
+    # Stamped once the case manager claims it — the marker that makes an
+    # interrupted delivery (a crash between insert and dispatch) replayable
+    # rather than lost.
+    assert event.processed_at is not None
     # Stored verbatim, not summarised: the payload is the audit record.
     assert event.payload_json == json.loads(RAW_PAYMENT_FAILED)
+
+
+def test_payment_failed_opens_a_case(client, db_session):
+    """The webhook route dispatches to the case manager, not just storage."""
+    response = client.post(URL, content=RAW_PAYMENT_FAILED, headers=_headers(RAW_PAYMENT_FAILED))
+    assert response.status_code == 200
+
+    case = db_session.execute(select(Case)).scalar_one()
+    assert case.razorpay_order_id == "order_TEST0001"
+    assert case.amount_paise == 149900
+    assert case.failure_class == "SOFT_FUNDS"  # error_reason: insufficient_funds
+
+
+def test_duplicate_payment_failed_does_not_open_a_second_case(client, db_session):
+    """Redelivery is a no-op at the webhook_events layer already; this
+    confirms the case layer would also survive a second, distinct delivery
+    for the same order (see test_case_manager.py for the direct unit test)."""
+    headers = _headers(RAW_PAYMENT_FAILED)
+    client.post(URL, content=RAW_PAYMENT_FAILED, headers=headers)
+    client.post(URL, content=RAW_PAYMENT_FAILED, headers=headers)  # duplicate event_id
+
+    assert db_session.execute(select(func.count()).select_from(Case)).scalar_one() == 1
 
 
 def test_malformed_json_rejected_after_signature_passes(client, db_session):
