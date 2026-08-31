@@ -7,21 +7,22 @@
 # the same logic in-process; this catches the wiring pytest cannot.
 #
 # Usage:
-#   docker run -d --name recoup-pg -e POSTGRES_PASSWORD=recoup \
-#     -e POSTGRES_USER=recoup -e POSTGRES_DB=recoup -p 55432:5432 postgres:16-alpine
 #   cp .env.example .env   # then set DATABASE_URL and RAZORPAY_WEBHOOK_SECRET
 #   .venv/bin/alembic upgrade head
 #   ./scripts/e2e_step01.sh
 #
+# Runs against whatever DATABASE_URL points at — Neon or a local Postgres.
+# Assertions go through scripts/dbq.py, which reads the same setting the app
+# does, so this can never end up checking a different database than the one
+# under test.
+#
 # Reads DATABASE_URL / RAZORPAY_WEBHOOK_SECRET from backend/.env by default.
+# NOTE: it TRUNCATEs webhook_events. Never point it at anything real.
 set -u
 
 BACKEND="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$BACKEND" || exit 1
 
-PG_CONTAINER="${PG_CONTAINER:-recoup-pg}"
-PG_USER="${PG_USER:-recoup}"
-PG_DB="${PG_DB:-recoup}"
 SECRET="${RAZORPAY_WEBHOOK_SECRET:-$(grep -E '^RAZORPAY_WEBHOOK_SECRET=' .env 2>/dev/null | cut -d= -f2-)}"
 PORT="${PORT:-8123}"
 URL="http://127.0.0.1:${PORT}/api/webhooks/razorpay"
@@ -30,7 +31,7 @@ TMP="$(mktemp -d)"
 FAILURES=0
 trap 'rm -rf "$TMP"' EXIT
 
-psql_q() { docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -tAc "$1"; }
+psql_q() { .venv/bin/python scripts/dbq.py "$1"; }
 count() { psql_q "SELECT count(*) FROM webhook_events;"; }
 check() {
   if [ "$2" = "$3" ]; then
@@ -47,17 +48,34 @@ if [ -z "$SECRET" ]; then
   exit 1
 fi
 
-if ! docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -tAc 'SELECT 1' > /dev/null 2>&1; then
-  echo "Cannot reach Postgres in container '$PG_CONTAINER' as $PG_USER/$PG_DB." >&2
-  echo "Start it:  docker run -d --name recoup-pg -e POSTGRES_PASSWORD=recoup \\" >&2
-  echo "             -e POSTGRES_USER=recoup -e POSTGRES_DB=recoup -p 55432:5432 postgres:16-alpine" >&2
+# Name the host we are about to hit, so a run against the wrong database is
+# obvious in the log rather than inferred from a confusing failure.
+TARGET="$(.venv/bin/python -c 'from sqlalchemy.engine import make_url
+from app.config import settings
+u = make_url(settings.database_url)
+print(f"{u.host}/{u.database}")' 2>/dev/null)"
+
+if [ -z "$TARGET" ]; then
+  echo "Could not read DATABASE_URL from settings. Is backend/.env present and" >&2
+  echo "the venv installed?  cp .env.example .env && pip install -e '.[dev]'" >&2
   exit 1
 fi
 
-if ! docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -tAc 'SELECT 1 FROM webhook_events LIMIT 1' > /dev/null 2>&1; then
-  echo "Table webhook_events is missing. Run:  .venv/bin/alembic upgrade head" >&2
+if ! psql_q 'SELECT 1' > /dev/null 2>&1; then
+  echo "Cannot reach Postgres at $TARGET." >&2
+  echo "Check DATABASE_URL in backend/.env. For a local server:" >&2
+  echo "  docker run -d --name recoup-pg -e POSTGRES_PASSWORD=recoup \\" >&2
+  echo "    -e POSTGRES_USER=recoup -e POSTGRES_DB=recoup -p 55432:5432 postgres:16-alpine" >&2
   exit 1
 fi
+
+if ! psql_q 'SELECT 1 FROM webhook_events LIMIT 1' > /dev/null 2>&1; then
+  echo "Table webhook_events is missing on $TARGET." >&2
+  echo "Run:  .venv/bin/alembic upgrade head" >&2
+  exit 1
+fi
+
+echo "== target: $TARGET =="
 
 # Non-canonical JSON on purpose: whitespace that `json.dumps` would not
 # reproduce. An implementation that verifies against a re-serialised dict
