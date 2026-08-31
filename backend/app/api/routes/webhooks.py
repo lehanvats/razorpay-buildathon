@@ -25,6 +25,7 @@ from hashlib import sha256
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,7 @@ from app.config import settings
 from app.db.models import WebhookEvent
 from app.db.session import get_db
 from app.integrations.razorpay_client import verify_webhook_signature
+from app.services.case_manager import handle_payment_failed
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +55,7 @@ def _event_id(request: Request, raw_body: bytes) -> str:
 
 
 @router.post("/razorpay")
-async def razorpay_webhook(
-    request: Request, db: Session = Depends(get_db)
-) -> dict[str, Any]:
+async def razorpay_webhook(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Ingest one Razorpay event.
 
     Must read `await request.body()` for the raw bytes BEFORE any JSON
@@ -105,8 +105,20 @@ async def razorpay_webhook(
         log.info("duplicate webhook %s (%s) ignored", event_id, event_type)
         return {"status": "duplicate", "event_id": event_id}
 
-    # TODO(step-02): dispatch to services.case_manager — open or advance a
-    # case, then stamp webhook_events.processed_at in the same transaction.
-    # Until then every stored event stays unprocessed and replayable.
+    # Dispatch and stamp processed_at in a second transaction, deliberately
+    # separate from the webhook_events insert above: folding them together
+    # would mean a case-creation failure also rolls back the raw-payload
+    # record, which is exactly the replayability step-01 exists to protect.
+    #
+    # TODO(step-03): handle payment.captured / order.paid / payment_link.paid
+    # via case_manager.handle_payment_succeeded — those events currently stay
+    # unprocessed (processed_at NULL), which is honest: nothing has acted on
+    # them yet.
+    if event_type == "payment.failed":
+        handle_payment_failed(db, payload)
+        db.execute(
+            update(WebhookEvent).where(WebhookEvent.id == row_id).values(processed_at=func.now())
+        )
+        db.commit()
 
     return {"status": "accepted", "event_id": event_id, "event": event_type}
