@@ -1,0 +1,35 @@
+# Claude Code local state — session data, worktrees, settings. Never pushed.
+.claude/
+
+# Secrets — never commit. Real keys live in .env; .env.example holds
+# placeholders only.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Local databases / dumps
+*.db
+*.sqlite3
+*.dump
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
