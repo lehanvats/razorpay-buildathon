@@ -1,0 +1,20 @@
+/* Global styles and design tokens.
+ *
+ * Define the full light palette on :root, then redefine only the tokens
+ * under a dark media query — so a colour never has its single definition
+ * inside a conditional block.
+ *
+ * Money is the visual hierarchy: the two recovery counters are the largest
+ * type on the dashboard, and incremental gets the same weight as gross.
+ */
+
+:root {
+  /* TODO(step-08): --bg, --surface, --ink, --muted, --line,
+     --accent (recovered), --warn (escalated), --danger (blocked) */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* TODO(step-08): dark overrides */
+  }
+}
