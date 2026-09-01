@@ -25,9 +25,19 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
+from app.agent.diagnose import DiagnosisFailed, diagnose
 from app.core.holdout import Arm, assign_arm
-from app.core.taxonomy import classify
+from app.core.taxonomy import FailureClass, classify
 from app.db.models import Case, Outcome
+from app.policy.gate import gate
+from app.policy.rules import MAX_CHARGE_ATTEMPTS, MAX_MESSAGES_PER_CASE
+from app.policy.snapshot import CaseSnapshot
+from app.schemas.proposal import ActionKind, Decision
+
+#: Once a case reaches one of these, advance_case is a no-op — re-entrant
+#: calls (e.g. a retried scheduler tick, once step-06 exists) must not
+#: re-diagnose a case that already stopped.
+_TERMINAL_STATUSES = frozenset({"recovered", "escalated", "exhausted"})
 
 
 def _is_mandate(payment_entity: dict) -> bool:
@@ -102,9 +112,57 @@ def handle_payment_failed(session: Any, event: dict) -> str:
     session.add(case)
     session.flush()
 
-    # TODO(step-04): if is_actionable(arm): advance_case(session, case_id)
+    # TODO(step-06): if is_actionable(arm): advance_case(session, case_id)
+    # Deliberately not wired yet even though advance_case is fully
+    # implemented below. Two blockers, both step-06's: (1) advance_case
+    # calls diagnose(), a synchronous LLM round-trip — running that inline
+    # in the webhook handler would blow Razorpay's fast-2xx expectation;
+    # (2) an APPROVE/REWRITE verdict has nowhere durable to go yet (no
+    # `actions` table for a poller to claim from), so calling it here would
+    # diagnose and gate a case and then discard the verdict. Once step-06
+    # adds the actions table and a way to run this off the request path
+    # (e.g. a background task queued here), this becomes a real call.
 
     return case_id
+
+
+def _build_case_context(case: Case, *, now: datetime) -> dict:
+    """Flatten a Case row into the plain dict agent/prompts.build_case_prompt
+    expects. See that function's docstring for the required shape."""
+    return {
+        "case_id": case.id,
+        "failure_class": case.failure_class,
+        "amount_paise": case.amount_paise,
+        "method": case.method,
+        "is_mandate": case.is_mandate,
+        "attempts_used": case.attempts_used,
+        "max_attempts": MAX_CHARGE_ATTEMPTS,
+        "messages_sent": case.messages_sent,
+        "max_messages": MAX_MESSAGES_PER_CASE,
+        "last_contact_at": case.last_contact_at.isoformat() if case.last_contact_at else None,
+        "pre_debit_notice_sent_at": (
+            case.pre_debit_notice_sent_at.isoformat() if case.pre_debit_notice_sent_at else None
+        ),
+        "now": now.isoformat(),
+    }
+
+
+def _build_snapshot(case: Case, *, now: datetime) -> CaseSnapshot:
+    """Flatten a Case row into the gate's pure input contract."""
+    return CaseSnapshot(
+        case_id=case.id,
+        amount_paise=case.amount_paise,
+        method=case.method,
+        failure_class=FailureClass(case.failure_class),
+        arm=Arm(case.arm),
+        attempts_used=case.attempts_used,
+        is_mandate=case.is_mandate,
+        pre_debit_notice_sent_at=case.pre_debit_notice_sent_at,
+        messages_sent=case.messages_sent,
+        last_contact_at=case.last_contact_at,
+        discount_already_offered=case.discount_offered,
+        now=now,
+    )
 
 
 def advance_case(session: Any, case_id: str) -> None:
@@ -117,8 +175,60 @@ def advance_case(session: Any, case_id: str) -> None:
     Refuses to run on control cases — asserts rather than silently returning,
     because a control case reaching this function means the branch above is
     broken and silence would corrupt the headline metric.
+
+    Not called anywhere yet — see the TODO(step-06) at its one intended call
+    site in handle_payment_failed. What's implemented here (diagnose, gate,
+    and the resulting escalate/block/approve branching) is complete and
+    tested on its own; only the "act on an APPROVE/REWRITE verdict" half
+    waits on step-06's `actions` table, noted inline below.
     """
-    raise NotImplementedError("step-04: agent step orchestration")
+    case = session.get(Case, case_id)
+    assert case is not None, f"advance_case called for unknown case {case_id}"
+    assert case.arm != Arm.CONTROL.value, (
+        f"advance_case called on control case {case_id} — control cases "
+        "never receive any action; this is a bug in the caller, not "
+        "something to silently skip."
+    )
+
+    if case.status in _TERMINAL_STATUSES:
+        return
+
+    now = datetime.now(UTC)
+
+    try:
+        proposal = diagnose(_build_case_context(case, now=now))
+    except DiagnosisFailed as exc:
+        escalate(session, case_id, rule_id="DIAGNOSIS_FAILED", reason=str(exc))
+        return
+
+    verdict = gate(_build_snapshot(case, now=now), proposal)
+
+    if verdict.decision == Decision.ESCALATE:
+        escalate(session, case_id, rule_id=verdict.rule_id, reason=verdict.explanation)
+        return
+
+    if verdict.effective_action == ActionKind.ESCALATE:
+        # The LLM itself proposed escalation and no rule overrode it — still
+        # a compliant escalation, just one the model initiated rather than
+        # the gate. Give it its own rule_id so the two are distinguishable
+        # in the queue rather than both showing "PASS".
+        escalate(session, case_id, rule_id="LLM_REQUESTED_ESCALATION", reason=proposal.reasoning)
+        return
+
+    if verdict.decision == Decision.BLOCK:
+        # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
+        #   event_type=EventType.POLICY_BLOCKED, payload={"rule_id": verdict.rule_id})
+        return
+
+    # APPROVE or REWRITE: verdict.effective_action/effective_timing is what
+    # should actually run. Deliberately a no-op beyond this point — writing
+    # to `case` here (attempts_used, messages_sent) would claim an attempt
+    # was spent before any executor has actually spent it.
+    # TODO(step-06): write an Action row (kind=verdict.effective_action,
+    #   scheduled_for=verdict.effective_timing, verdict_rule_id=verdict.rule_id)
+    #   once the `actions` table exists, for the poller to claim.
+    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
+    #   event_type=EventType.POLICY_APPROVED, payload={"rule_id": verdict.rule_id})
 
 
 def handle_payment_succeeded(session: Any, event: dict) -> None:
@@ -183,8 +293,23 @@ def escalate(session: Any, case_id: str, *, rule_id: str, reason: str) -> None:
 
     After escalation no further automated action is taken. Silence is the
     correct behaviour under the stopping rule, not a stalled case.
+
+    Idempotent by construction: re-escalating the same case just overwrites
+    the rule_id/reason with the latest verdict rather than erroring, since a
+    case can only be in one escalated state at a time.
     """
-    raise NotImplementedError("step-05: escalation")
+    case = session.get(Case, case_id)
+    if case is None:
+        return
+
+    case.status = "escalated"
+    case.escalated_at = datetime.now(UTC)
+    case.escalation_rule_id = rule_id
+    case.escalation_reason = reason
+    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
+    #   event_type=EventType.ESCALATED, payload={"rule_id": rule_id, "reason": reason})
+
+    session.flush()
 
 
 def get_timeline(session: Any, case_id: str) -> list[dict]:
