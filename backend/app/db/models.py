@@ -10,11 +10,12 @@ Money is stored in paise as an integer everywhere. Never float, never rupees.
 Timestamps are timezone-aware UTC in the column; IST is a presentation
 concern (the salary-window rule reasons in IST — see policy/rules.py).
 
-Step-01 implemented `webhook_events`; step-02 added `cases`; step-03 adds
-`outcomes`. `actions` and `audit_events` are still fenced off below rather
-than half-declared: a class inheriting Base with no primary key raises at
-import time, and a partially-declared table would produce a migration that
-lies about what a given step delivers.
+Step-01 implemented `webhook_events`; step-02 added `cases`; step-03 added
+`outcomes`; step-05 added the `cases.escalated_at`/`escalation_rule_id`/
+`escalation_reason` columns. `actions` and `audit_events` are still fenced
+off below rather than half-declared: a class inheriting Base with no primary
+key raises at import time, and a partially-declared table would produce a
+migration that lies about what a given step delivers.
 """
 
 from datetime import datetime
@@ -88,6 +89,15 @@ class Case(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalation_rule_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """The policy.rules.RuleId that stopped the agent — e.g.
+    LOW_CONFIDENCE_ESCALATE, ATTEMPT_BUDGET_EXHAUSTED. Denormalised onto the
+    case (rather than requiring a join to audit_events) so the step-08
+    escalation queue can list open escalations before step-07 exists."""
+    escalation_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    """Verdict.explanation verbatim, for the human reviewer."""
 
     def __repr__(self) -> str:
         return f"<Case {self.id} {self.failure_class}/{self.arm}>"
