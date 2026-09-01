@@ -18,13 +18,13 @@ stable cryptographic digest. There is a regression test pinning this.
 """
 
 import hashlib
-from enum import Enum
+from enum import StrEnum
 
 #: 1 in N cases is held back untouched. 5 == 20% control.
 CONTROL_BUCKET_MODULUS = 5
 
 
-class Arm(str, Enum):
+class Arm(StrEnum):
     """Experiment arm. Stored on `cases.arm`, written once at creation."""
 
     TREATMENT = "treatment"

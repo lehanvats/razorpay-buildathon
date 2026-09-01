@@ -20,10 +20,10 @@ funds dominates mandate failures, which is why SOFT_FUNDS earns its own class
 rather than living under a generic "soft decline".
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class FailureClass(str, Enum):
+class FailureClass(StrEnum):
     """The four buckets. Stored on `cases.failure_class`."""
 
     HARD_DECLINE = "HARD_DECLINE"

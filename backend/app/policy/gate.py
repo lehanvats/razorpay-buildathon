@@ -16,7 +16,7 @@ never a Proposal.
 
 from app.policy.rules import RULE_CHAIN
 from app.policy.snapshot import CaseSnapshot
-from app.schemas.proposal import Proposal, Verdict
+from app.schemas.proposal import Decision, Proposal, Verdict
 
 
 def gate(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict:
@@ -44,4 +44,58 @@ def gate(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict:
       * Same inputs, same output — no clock reads, no randomness. Time enters
         only via `snapshot.now`.
     """
-    raise NotImplementedError("step-05: policy engine and compliance gate")
+    current = proposal
+    last_rewrite: Verdict | None = None
+
+    for rule in RULE_CHAIN:
+        verdict = rule(snapshot, current)
+        if verdict is None:
+            continue
+
+        if verdict.decision in (Decision.BLOCK, Decision.ESCALATE):
+            return verdict
+
+        # REWRITE: thread the amendment onto `current` so every later rule
+        # in the chain evaluates against the amended proposal, not the
+        # model's original one. A rule that didn't touch a given field
+        # leaves its Verdict field None, which keeps `current`'s value
+        # rather than clobbering an earlier rewrite.
+        last_rewrite = verdict
+        current = current.model_copy(
+            update={
+                "action": (
+                    verdict.effective_action
+                    if verdict.effective_action is not None
+                    else current.action
+                ),
+                "timing": (
+                    verdict.effective_timing
+                    if verdict.effective_timing is not None
+                    else current.timing
+                ),
+                "discount_percent": (
+                    verdict.effective_discount_percent
+                    if verdict.effective_discount_percent is not None
+                    else current.discount_percent
+                ),
+            }
+        )
+
+    if last_rewrite is None:
+        return Verdict(
+            decision=Decision.APPROVE,
+            rule_id="PASS",
+            effective_action=proposal.action,
+            effective_timing=proposal.timing,
+            effective_discount_percent=proposal.discount_percent,
+            explanation="No policy rule applied; proposal approved as submitted.",
+        )
+
+    return Verdict(
+        decision=Decision.REWRITE,
+        rule_id=last_rewrite.rule_id,
+        effective_action=current.action,
+        effective_timing=current.timing,
+        effective_discount_percent=current.discount_percent,
+        explanation=last_rewrite.explanation,
+    )

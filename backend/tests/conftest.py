@@ -17,15 +17,11 @@ import pytest
 
 TEST_WEBHOOK_SECRET = "test_webhook_secret"
 
-DEFAULT_TEST_DATABASE_URL = (
-    "postgresql+psycopg://recoup:recoup@localhost:55432/recoup_test"
-)
+DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://recoup:recoup@localhost:55432/recoup_test"
 
 # Must happen before `app.config` is imported anywhere. Real env vars take
 # precedence over the .env file in pydantic-settings, so this wins.
-os.environ["DATABASE_URL"] = os.environ.get(
-    "TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL
-)
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
 os.environ["RAZORPAY_WEBHOOK_SECRET"] = TEST_WEBHOOK_SECRET
 
 from sqlalchemy import create_engine, text  # noqa: E402
@@ -127,10 +123,45 @@ def snapshot_factory():
     no attempts used, no prior contact, fixed `now`. Each test overrides only
     the field it is about, so the test reads as the rule it checks.
     """
-    raise NotImplementedError("step-05: snapshot factory")
+    from datetime import UTC, datetime
+
+    from app.core.holdout import Arm
+    from app.core.taxonomy import FailureClass
+    from app.policy.snapshot import CaseSnapshot
+
+    def _build(**overrides) -> CaseSnapshot:
+        defaults = dict(
+            case_id="case_test",
+            amount_paise=149_900,
+            method="card",
+            failure_class=FailureClass.SOFT_TECHNICAL,
+            arm=Arm.TREATMENT,
+            attempts_used=0,
+            is_mandate=False,
+            pre_debit_notice_sent_at=None,
+            messages_sent=0,
+            last_contact_at=None,
+            discount_already_offered=False,
+            now=datetime(2026, 9, 2, 12, 0, tzinfo=UTC),
+        )
+        defaults.update(overrides)
+        return CaseSnapshot(**defaults)
+
+    return _build
 
 
 @pytest.fixture
 def proposal_factory():
     """Build a valid Proposal with defaults; override per test."""
-    raise NotImplementedError("step-05: proposal factory")
+    from app.schemas.proposal import ActionKind, Proposal
+
+    def _build(**overrides) -> Proposal:
+        defaults = dict(
+            action=ActionKind.SCHEDULE_RETRY,
+            confidence=0.9,
+            reasoning="Test proposal.",
+        )
+        defaults.update(overrides)
+        return Proposal(**defaults)
+
+    return _build

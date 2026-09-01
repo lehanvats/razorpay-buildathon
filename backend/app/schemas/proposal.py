@@ -11,12 +11,12 @@ What it is allowed to do at all is the gate's decision, never the model's.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class ActionKind(str, Enum):
+class ActionKind(StrEnum):
     """The fixed action menu presented to the model. The model may return
     nothing outside this set — adding a member here is a product decision
     that also needs a policy rule and an executor."""
@@ -27,7 +27,7 @@ class ActionKind(str, Enum):
     ESCALATE = "ESCALATE"
 
 
-class Channel(str, Enum):
+class Channel(StrEnum):
     EMAIL = "email"
 
 
@@ -45,6 +45,12 @@ class Proposal(BaseModel):
     channel: Channel | None = Field(
         default=None,
         description="Outreach channel; null for pure charge retries.",
+    )
+    discount_percent: int | None = Field(
+        default=None,
+        description="Requested discount, as a percent. Only meaningful for "
+        "OFFER_DISCOUNT. The gate clamps this to "
+        "policy.rules.MAX_DISCOUNT_PERCENT rather than blocking it outright.",
     )
     message_draft: str | None = Field(
         default=None,
@@ -64,7 +70,7 @@ class Proposal(BaseModel):
     )
 
 
-class Decision(str, Enum):
+class Decision(StrEnum):
     """What the gate concluded."""
 
     APPROVE = "APPROVE"
@@ -104,6 +110,5 @@ class Verdict(BaseModel):
     effective_timing: datetime | None = None
     effective_discount_percent: int | None = None
     explanation: str = Field(
-        description="Human-readable reason, shown on the case timeline next "
-        "to the rule_id badge.",
+        description="Human-readable reason, shown on the case timeline next to the rule_id badge.",
     )

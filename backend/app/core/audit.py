@@ -11,11 +11,11 @@ mid-action shows up as a started-but-unfinished step rather than as nothing
 having happened at all.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class Actor(str, Enum):
+class Actor(StrEnum):
     """Who produced the event. Renders as the timeline's left gutter."""
 
     WEBHOOK = "webhook"
@@ -26,7 +26,7 @@ class Actor(str, Enum):
     HUMAN = "human"
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """The timeline vocabulary. Keep it small and stable — the case detail
     view and the demo narration both read these verbatim."""
 
@@ -34,10 +34,10 @@ class EventType(str, Enum):
     CASE_OPENED = "case_opened"
     ARM_ASSIGNED = "arm_assigned"
     CLASSIFIED = "classified"
-    LLM_PROPOSED = "llm_proposed"        # payload carries reasoning verbatim
-    LLM_REJECTED = "llm_rejected"        # unparseable / schema-invalid output
+    LLM_PROPOSED = "llm_proposed"  # payload carries reasoning verbatim
+    LLM_REJECTED = "llm_rejected"  # unparseable / schema-invalid output
     POLICY_APPROVED = "policy_approved"  # payload carries rule_id
-    POLICY_BLOCKED = "policy_blocked"    # payload carries the blocking rule_id
+    POLICY_BLOCKED = "policy_blocked"  # payload carries the blocking rule_id
     ACTION_SCHEDULED = "action_scheduled"
     ACTION_STARTED = "action_started"
     ACTION_COMPLETED = "action_completed"
