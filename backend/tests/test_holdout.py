@@ -9,8 +9,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 from app.core.holdout import CONTROL_BUCKET_MODULUS, Arm, assign_arm, is_actionable
 
 
@@ -69,11 +67,34 @@ def test_control_cases_are_never_actionable():
     assert is_actionable(Arm.TREATMENT) is True
 
 
-@pytest.mark.skip(reason="step-03 not implemented — needs the outcomes table")
-def test_control_outcomes_are_still_measured():
+def test_control_outcomes_are_still_measured(db_session, monkeypatch):
     """The holdout gates actions, not measurement.
 
     A control case that self-recovers must still produce an outcome row.
     If this fails, the control recovery rate reads as zero and the
     incremental number becomes a lie in our own favour.
     """
+    from app.db.models import Outcome
+    from app.services.case_manager import handle_payment_failed, handle_payment_succeeded
+
+    monkeypatch.setattr("app.services.case_manager.assign_arm", lambda _case_id: Arm.CONTROL)
+
+    def _event(**overrides):
+        entity = {
+            "id": "pay_ABC",
+            "order_id": "order_ABC",
+            "amount": 149900,
+            "currency": "INR",
+            "method": "upi",
+            "error_reason": "insufficient_funds",
+            **overrides,
+        }
+        return {"payload": {"payment": {"entity": entity}}}
+
+    case_id = handle_payment_failed(db_session, _event())
+    handle_payment_succeeded(db_session, _event())
+
+    outcome = db_session.get(Outcome, case_id)
+    assert outcome is not None
+    assert outcome.arm_at_recovery == Arm.CONTROL.value
+    assert outcome.recovered_amount_paise == 149900

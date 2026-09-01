@@ -4,7 +4,7 @@ import json
 
 from sqlalchemy import func, select
 
-from app.db.models import Case, WebhookEvent
+from app.db.models import Case, Outcome, WebhookEvent
 from app.integrations.razorpay_client import sign_payload
 from tests.conftest import TEST_WEBHOOK_SECRET
 
@@ -156,6 +156,48 @@ def test_payment_failed_opens_a_case(client, db_session):
     assert case.razorpay_order_id == "order_TEST0001"
     assert case.amount_paise == 149900
     assert case.failure_class == "SOFT_FUNDS"  # error_reason: insufficient_funds
+
+
+RAW_PAYMENT_CAPTURED = (
+    b'{"event": "payment.captured", "account_id": "acc_TEST",\n'
+    b'  "contains": ["payment"],\n'
+    b'  "payload": {"payment": {"entity": {"id": "pay_TEST0001",'
+    b' "order_id": "order_TEST0001", "amount": 149900, "currency": "INR",'
+    b' "method": "upi"}}},\n'
+    b'  "created_at": 1756684900}'
+)
+
+
+def test_payment_captured_closes_the_case_it_recovered(client, db_session):
+    """The full loop: a failure opens a case, a later capture closes it with
+    an outcome row — end to end through the route, not just the unit."""
+    client.post(URL, content=RAW_PAYMENT_FAILED, headers=_headers(RAW_PAYMENT_FAILED))
+    case_id = db_session.execute(select(Case)).scalar_one().id
+
+    response = client.post(
+        URL,
+        content=RAW_PAYMENT_CAPTURED,
+        headers=_headers(RAW_PAYMENT_CAPTURED, event_id="evt_TEST0002"),
+    )
+    assert response.status_code == 200
+
+    case = db_session.get(Case, case_id)
+    assert case.status == "recovered"
+    outcome = db_session.get(Outcome, case_id)
+    assert outcome is not None
+    assert outcome.recovered_amount_paise == 149900
+
+
+def test_payment_captured_for_an_order_with_no_case_is_a_noop(client, db_session):
+    """A payment that succeeded on the first try never opened a case — the
+    capture event must not error just because there's nothing to close."""
+    response = client.post(
+        URL,
+        content=RAW_PAYMENT_CAPTURED,
+        headers=_headers(RAW_PAYMENT_CAPTURED, event_id="evt_TEST0003"),
+    )
+    assert response.status_code == 200
+    assert db_session.execute(select(func.count()).select_from(Outcome)).scalar_one() == 0
 
 
 def test_duplicate_payment_failed_does_not_open_a_second_case(client, db_session):

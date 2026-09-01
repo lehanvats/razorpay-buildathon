@@ -1,15 +1,13 @@
-"""Case creation tests.
-
-Only `handle_payment_failed` is exercised — `advance_case`,
-`handle_payment_succeeded`, `escalate` and `get_timeline` are later steps and
-still raise NotImplementedError.
+"""Case lifecycle tests: opening (`handle_payment_failed`) and closing
+(`handle_payment_succeeded`). `advance_case`, `escalate` and `get_timeline`
+are later steps and still raise NotImplementedError.
 """
 
 from sqlalchemy import func, select
 
 from app.core.holdout import Arm
-from app.db.models import Case
-from app.services.case_manager import handle_payment_failed
+from app.db.models import Case, Outcome
+from app.services.case_manager import handle_payment_failed, handle_payment_succeeded
 
 
 def _event(*, order_id="order_ABC", payment_id="pay_ABC", **entity_overrides) -> dict:
@@ -82,3 +80,50 @@ def test_class_and_arm_are_not_recomputed_on_repeat_failure(db_session, monkeypa
     case = db_session.get(Case, case_id)
     assert case.failure_class == "SOFT_FUNDS"
     assert case.arm == Arm.CONTROL.value
+
+
+def _paid_event(*, order_id="order_ABC", payment_id="pay_ABC", **entity_overrides) -> dict:
+    entity = {
+        "id": payment_id,
+        "order_id": order_id,
+        "amount": 149900,
+        "currency": "INR",
+        "method": "upi",
+        **entity_overrides,
+    }
+    return {"payload": {"payment": {"entity": entity}}}
+
+
+def test_payment_succeeded_writes_outcome_and_closes_case(db_session, monkeypatch):
+    monkeypatch.setattr("app.services.case_manager.assign_arm", lambda _case_id: Arm.TREATMENT)
+    case_id = handle_payment_failed(db_session, _event())
+
+    handle_payment_succeeded(db_session, _paid_event())
+
+    case = db_session.get(Case, case_id)
+    assert case.status == "recovered"
+    assert case.closed_at is not None
+
+    outcome = db_session.get(Outcome, case_id)
+    assert outcome is not None
+    assert outcome.recovered_amount_paise == 149900
+    assert outcome.via == "self"
+    assert outcome.arm_at_recovery == Arm.TREATMENT.value
+
+
+def test_payment_succeeded_is_a_noop_when_no_case_exists(db_session):
+    """Most successful payments never failed first — this must not error."""
+    handle_payment_succeeded(db_session, _paid_event(order_id="order_NEVER_FAILED"))
+
+    assert db_session.execute(select(func.count()).select_from(Outcome)).scalar_one() == 0
+
+
+def test_payment_succeeded_is_idempotent_across_redelivered_events(db_session):
+    """payment.captured and order.paid can both fire for one recovery; the
+    second delivery must not double-write or error on the existing PK."""
+    handle_payment_failed(db_session, _event())
+
+    handle_payment_succeeded(db_session, _paid_event())
+    handle_payment_succeeded(db_session, _paid_event())
+
+    assert db_session.execute(select(func.count()).select_from(Outcome)).scalar_one() == 1
