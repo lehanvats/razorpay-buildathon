@@ -32,8 +32,7 @@ def test_tls_query_params_survive_normalisation() -> None:
     through `make_url` is the edit that would not.
     """
     url = (
-        "postgresql://u:p@ep-x-pooler.aws.neon.tech/neondb"
-        "?sslmode=require&channel_binding=require"
+        "postgresql://u:p@ep-x-pooler.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
     )
     out = _with_psycopg_driver(url)
 

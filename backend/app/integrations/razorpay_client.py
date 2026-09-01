@@ -55,8 +55,7 @@ def _client() -> razorpay.Client:
     """
     if not settings.razorpay_key_id or not settings.razorpay_key_secret:
         raise RuntimeError(
-            "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not set; "
-            "cannot call the Razorpay API"
+            "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not set; cannot call the Razorpay API"
         )
     return razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
 
