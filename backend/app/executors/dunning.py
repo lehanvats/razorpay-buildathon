@@ -40,7 +40,12 @@ class DunningExecutor:
         if not verdict.message_draft:
             return ExecutionResult(ok=False, error="verdict carries no message_draft to send")
 
-        message_id = send_email(case.customer_email, "Complete your payment", verdict.message_draft)
+        try:
+            message_id = send_email(
+                case.customer_email, "Complete your payment", verdict.message_draft
+            )
+        except Exception as exc:  # noqa: BLE001 — reported, not raised; see base.Executor.execute
+            return ExecutionResult(ok=False, error=str(exc))
 
         case.messages_sent += 1
         case.last_contact_at = datetime.now(UTC)
@@ -82,7 +87,10 @@ class PreDebitNoticeExecutor:
             f"account on or after {debit_time}, per your standing mandate. No "
             "action is needed if this is expected."
         )
-        message_id = send_email(case.customer_email, "Upcoming payment notice", body)
+        try:
+            message_id = send_email(case.customer_email, "Upcoming payment notice", body)
+        except Exception as exc:  # noqa: BLE001 — reported, not raised; see base.Executor.execute
+            return ExecutionResult(ok=False, error=str(exc))
 
         case.pre_debit_notice_sent_at = datetime.now(UTC)
         session.flush()

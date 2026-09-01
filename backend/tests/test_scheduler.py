@@ -369,6 +369,44 @@ def test_dispatch_runs_the_full_send_payment_link_fan_out(db_session, monkeypatc
     assert updated_case.messages_sent == 1
 
 
+def test_dispatch_survives_an_executor_that_raises_instead_of_reporting_failure(
+    db_session, monkeypatch
+):
+    """Executor.execute's contract (executors/base.py) says 'must not raise'.
+    dispatch()'s loop is the backstop for the day one doesn't honor it: a
+    raising executor must become a failed ExecutionResult, not abort the
+    whole tick before `action.result`/`dispatch_attempts` are ever written."""
+    case = _make_case(db_session, status="scheduled")
+    monkeypatch.setattr(
+        "app.executors.payment_link.create_payment_link",
+        lambda *a, **kw: {"id": "plink_BUGGY", "short_url": "https://rzp.io/z"},
+    )
+
+    def _raise(*a, **kw):
+        raise RuntimeError("executor bug, not a reported ExecutionResult")
+
+    monkeypatch.setattr("app.executors.dunning.DunningExecutor.execute", _raise)
+
+    action_id = schedule(
+        db_session,
+        case_id=case.id,
+        kind=ActionKind.SEND_PAYMENT_LINK,
+        verdict=_verdict(
+            effective_action=ActionKind.SEND_PAYMENT_LINK,
+            message_draft="Here is your payment link.",
+        ),
+        run_at=datetime.now(UTC),
+    )
+    action = db_session.get(Action, action_id)
+
+    dispatch(db_session, action)  # must not raise
+
+    updated_action = db_session.get(Action, action_id)
+    assert updated_action.dispatch_attempts == 1
+    assert "executor bug" in updated_action.error
+    assert db_session.get(Case, case.id).status == "scheduled"  # untouched
+
+
 def test_dispatch_escalates_after_exhausting_dispatch_attempts(db_session, monkeypatch):
     case = _make_case(db_session, status="scheduled")
 

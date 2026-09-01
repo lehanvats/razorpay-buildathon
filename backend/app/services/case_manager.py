@@ -32,6 +32,7 @@ from app.db.models import Action, Case, Outcome
 from app.policy.gate import gate
 from app.policy.rules import MAX_CHARGE_ATTEMPTS, MAX_MESSAGES_PER_CASE
 from app.policy.snapshot import CaseSnapshot
+from app.scheduler.poller import SchedulingFailed
 from app.scheduler.poller import cancel as cancel_scheduled_action
 from app.scheduler.poller import schedule as schedule_action
 from app.schemas.proposal import ActionKind, Decision
@@ -238,13 +239,22 @@ def advance_case(session: Any, case_id: str) -> None:
     # executor has actually spent it. Those counters are owned by the
     # executors themselves (see executors/retry.py, executors/dunning.py),
     # in the same transaction as the network call they describe.
-    schedule_action(
-        session,
-        case_id=case_id,
-        kind=verdict.effective_action,
-        verdict=verdict,
-        run_at=verdict.effective_timing or now,
-    )
+    try:
+        schedule_action(
+            session,
+            case_id=case_id,
+            kind=verdict.effective_action,
+            verdict=verdict,
+            run_at=verdict.effective_timing or now,
+        )
+    except SchedulingFailed as exc:
+        # The eager pre-debit notice (for a mandate's first retry) failed to
+        # send. No Action row was written, so there is nothing pending to
+        # cancel — escalate rather than silently leaving the case "open"
+        # with last_diagnosed_at already stamped, which would make it
+        # unreachable by claim_new_cases forever.
+        escalate(session, case_id, rule_id="SCHEDULING_FAILED", reason=str(exc))
+        return
     case.status = "scheduled"
     session.flush()
     # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,

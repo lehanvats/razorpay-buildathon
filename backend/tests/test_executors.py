@@ -173,6 +173,28 @@ def test_dunning_executor_refuses_to_invent_a_fallback_message(db_session, monke
     assert db_session.get(Case, case.id).messages_sent == 0
 
 
+def test_dunning_executor_reports_failure_when_send_email_raises(db_session, monkeypatch):
+    """Executor.execute's contract (executors/base.py) says 'must not raise' —
+    a Resend transport error must come back as ExecutionResult(ok=False),
+    not propagate out of execute()."""
+    case = _make_case(db_session, messages_sent=0)
+
+    def _raise(*a, **kw):
+        raise RuntimeError("resend 500")
+
+    monkeypatch.setattr("app.executors.dunning.send_email", _raise)
+
+    result = DunningExecutor().execute(
+        db_session, case.id, _verdict(message_draft="Please complete your payment.")
+    )
+
+    assert result.ok is False
+    assert "resend 500" in result.error
+    updated = db_session.get(Case, case.id)
+    assert updated.messages_sent == 0
+    assert updated.last_contact_at is None
+
+
 # --- PreDebitNoticeExecutor -------------------------------------------------
 
 
@@ -192,3 +214,22 @@ def test_pre_debit_notice_executor_stamps_notice_without_touching_contact_counte
     assert updated.pre_debit_notice_sent_at is not None
     assert updated.messages_sent == 2  # unchanged
     assert updated.last_contact_at is None  # unchanged
+
+
+def test_pre_debit_notice_executor_reports_failure_when_send_email_raises(db_session, monkeypatch):
+    """Same 'must not raise' contract as DunningExecutor — this one matters
+    more: schedule() in scheduler/poller.py treats a failed notice as reason
+    to refuse scheduling the debit at all (see SchedulingFailed)."""
+    case = _make_case(db_session, is_mandate=True, messages_sent=0)
+
+    def _raise(*a, **kw):
+        raise RuntimeError("resend 500")
+
+    monkeypatch.setattr("app.executors.dunning.send_email", _raise)
+
+    verdict = _verdict(effective_timing=datetime(2026, 9, 5, 9, 0, tzinfo=UTC))
+    result = PreDebitNoticeExecutor().execute(db_session, case.id, verdict)
+
+    assert result.ok is False
+    assert "resend 500" in result.error
+    assert db_session.get(Case, case.id).pre_debit_notice_sent_at is None

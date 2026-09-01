@@ -321,6 +321,46 @@ def test_advance_case_marks_exhausted_on_attempt_budget_block(db_session, monkey
     assert updated.escalation_rule_id is None  # exhausted, not escalated — no human queue entry
 
 
+def test_advance_case_escalates_when_the_eager_pre_debit_notice_fails_to_send(
+    db_session, monkeypatch
+):
+    """A mandate's first retry fires PreDebitNoticeExecutor eagerly inside
+    schedule() (see scheduler/poller.py:schedule). If that send fails,
+    scheduling the actual debit anyway would charge a customer who was never
+    notified — the exact compliance breach the notice exists to prevent. The
+    case must be escalated, not silently left "open" with
+    last_diagnosed_at already stamped (which would make it unreachable by
+    claim_new_cases forever), and no Action row should exist."""
+    case_id = _treatment_case(
+        db_session,
+        monkeypatch,
+        error_reason="gateway_technical_error",  # SOFT_TECHNICAL
+        subscription_id="sub_ABC",  # is_mandate
+    )
+    _stub_diagnose(
+        monkeypatch,
+        Proposal(action=ActionKind.SCHEDULE_RETRY, confidence=0.9, reasoning="retry it"),
+    )
+
+    def _raise(*a, **kw):
+        raise RuntimeError("resend 500")
+
+    monkeypatch.setattr("app.executors.dunning.send_email", _raise)
+
+    advance_case(db_session, case_id)
+
+    case = db_session.get(Case, case_id)
+    assert case.status == "escalated"
+    assert case.escalation_rule_id == "SCHEDULING_FAILED"
+    assert case.pre_debit_notice_sent_at is None
+    assert (
+        db_session.execute(
+            select(func.count()).select_from(Action).where(Action.case_id == case_id)
+        ).scalar_one()
+        == 0
+    )
+
+
 def test_payment_succeeded_derives_via_from_the_most_recent_successful_action(db_session):
     case_id = _treatment_case_noop(db_session)
     action = Action(

@@ -85,6 +85,17 @@ EXECUTOR_REGISTRY: dict[ActionKind, list[Executor]] = {
 }
 
 
+class SchedulingFailed(RuntimeError):
+    """The eager pre-debit notice failed to send, so `schedule()` refused to
+    write the Action row.
+
+    Debiting a mandate customer who was never notified is the compliance
+    breach `executors/base.py` exists to prevent -- see its module docstring.
+    Callers (`services/case_manager.advance_case`) must catch this and
+    escalate rather than mark the case scheduled.
+    """
+
+
 def schedule(
     session: Session,
     *,
@@ -110,6 +121,10 @@ def schedule(
     SOFT_FUNDS would report `SALARY_WINDOW_RESCHEDULE` even though the
     notice rule fired too. Case state is what the rule itself keys on, so it
     survives any future chain reordering.
+
+    Raises `SchedulingFailed`, and writes no Action row, if that eager notice
+    fails to send -- the alternative (scheduling the debit anyway) is the
+    exact compliance breach the notice exists to prevent.
     """
     case = session.get(Case, case_id)
     if (
@@ -118,7 +133,9 @@ def schedule(
         and case.is_mandate
         and case.pre_debit_notice_sent_at is None
     ):
-        PreDebitNoticeExecutor().execute(session, case_id, verdict)
+        notice_result = PreDebitNoticeExecutor().execute(session, case_id, verdict)
+        if not notice_result.ok:
+            raise SchedulingFailed(f"pre-debit notice failed to send: {notice_result.error}")
 
     action = Action(
         id=str(uuid4()),
@@ -245,7 +262,13 @@ def dispatch(session: Session, action: Action) -> None:
     error: str | None = None
     razorpay_ref: str | None = None
     for executor in executors:
-        result: ExecutionResult = executor.execute(session, case.id, verdict)
+        try:
+            result: ExecutionResult = executor.execute(session, case.id, verdict)
+        except Exception as exc:  # noqa: BLE001 -- a buggy executor must not
+            # abort the whole tick; Executor.execute's contract (see
+            # executors/base.py) says "must not raise", but this is the
+            # backstop for the day one doesn't honor it.
+            result = ExecutionResult(ok=False, error=str(exc))
         razorpay_ref = result.razorpay_ref or razorpay_ref
         if not result.ok:
             ok, error = False, result.error
