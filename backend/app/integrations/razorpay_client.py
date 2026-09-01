@@ -6,6 +6,7 @@ is out of scope.
 """
 
 import hmac
+import time
 from hashlib import sha256
 from typing import Any
 
@@ -90,5 +91,29 @@ def create_payment_link(
 
     The compliant path above the AFA threshold. Expiry defaults to match the
     discount window so a stale link cannot be paid at a withdrawn price.
+
+    A `case_id` in `notes` is stamped onto the link's own `reference_id`,
+    not just into `notes` (Razorpay notes are not queryable from a webhook
+    payload the way `reference_id` is). This is the fix for the correlation
+    gap: a payment link is its own new Order, so the eventual
+    `payment_link.paid` webhook's `payment.entity.order_id` is the link's
+    order, not the case's original one — `reference_id` is the fallback key
+    `services/case_manager.py` uses when the order_id lookup misses.
     """
-    raise NotImplementedError("step-06: payment link creation")
+    if amount_paise <= 0:
+        raise ValueError("amount_paise must be a positive integer number of paise")
+
+    data: dict[str, Any] = {
+        "amount": amount_paise,
+        "currency": "INR",
+        "customer": {"email": customer_email},
+        "notify": {"email": True},
+        "expire_by": int(time.time()) + expires_in_hours * 3600,
+        # Razorpay's notes values must be strings.
+        "notes": {k: str(v) for k, v in notes.items()},
+    }
+    case_id = notes.get("case_id")
+    if case_id is not None:
+        data["reference_id"] = str(case_id)
+
+    return _client().payment_link.create(data)
