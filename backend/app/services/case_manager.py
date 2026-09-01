@@ -19,6 +19,7 @@ The recovery loop:
     later webhook (paid) ------+-> write outcome  <-- BOTH arms
 """
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -26,7 +27,7 @@ from sqlalchemy import select
 
 from app.core.holdout import Arm, assign_arm
 from app.core.taxonomy import classify
-from app.db.models import Case
+from app.db.models import Case, Outcome
 
 
 def _is_mandate(payment_entity: dict) -> bool:
@@ -133,8 +134,48 @@ def handle_payment_succeeded(session: Any, event: dict) -> None:
 
     Also cancels any pending scheduled action for the case: charging a
     customer who has already paid is the worst bug this system could ship.
+
+    Two kinds of no-op are expected and NOT errors:
+      - No case for this order (most successful payments never failed first;
+        this handler only closes the loop for orders that did).
+      - A case that already has an outcome (Razorpay fires more than one of
+        these three event types for a single recovery — e.g. payment.captured
+        AND order.paid — and each redelivers independently).
     """
-    raise NotImplementedError("step-03: outcome recording")
+    entity = event["payload"]["payment"]["entity"]
+    order_id = entity["order_id"]
+
+    case = session.execute(
+        select(Case).where(Case.razorpay_order_id == order_id)
+    ).scalar_one_or_none()
+    if case is None:
+        return
+
+    existing_outcome = session.get(Outcome, case.id)
+    if existing_outcome is not None:
+        return
+
+    # TODO(step-06): derive `via` from the case's most recent Action row
+    # (retry vs. payment_link) once the actions table exists. Until then no
+    # action has ever been taken on any case — advance_case is still
+    # NotImplementedError and never called — so every recovery observed here
+    # is, definitionally, a self-recovery.
+    outcome = Outcome(
+        case_id=case.id,
+        recovered_amount_paise=entity["amount"],
+        recovered_at=datetime.now(UTC),
+        via="self",
+        arm_at_recovery=case.arm,
+    )
+    session.add(outcome)
+
+    case.status = "recovered"
+    case.closed_at = outcome.recovered_at
+    # TODO(step-06): cancel any pending scheduled Action row for this case.
+    # TODO(step-07): audit.record(session, case_id=case.id, actor=Actor.WEBHOOK,
+    #   event_type=EventType.RECOVERED, payload={"amount_paise": entity["amount"]})
+
+    session.flush()
 
 
 def escalate(session: Any, case_id: str, *, rule_id: str, reason: str) -> None:

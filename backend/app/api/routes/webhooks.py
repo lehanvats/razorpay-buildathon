@@ -33,7 +33,7 @@ from app.config import settings
 from app.db.models import WebhookEvent
 from app.db.session import get_db
 from app.integrations.razorpay_client import verify_webhook_signature
-from app.services.case_manager import handle_payment_failed
+from app.services.case_manager import handle_payment_failed, handle_payment_succeeded
 
 log = logging.getLogger(__name__)
 
@@ -109,13 +109,19 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)) -> d
     # separate from the webhook_events insert above: folding them together
     # would mean a case-creation failure also rolls back the raw-payload
     # record, which is exactly the replayability step-01 exists to protect.
-    #
-    # TODO(step-03): handle payment.captured / order.paid / payment_link.paid
-    # via case_manager.handle_payment_succeeded — those events currently stay
-    # unprocessed (processed_at NULL), which is honest: nothing has acted on
-    # them yet.
     if event_type == "payment.failed":
         handle_payment_failed(db, payload)
+        db.execute(
+            update(WebhookEvent).where(WebhookEvent.id == row_id).values(processed_at=func.now())
+        )
+        db.commit()
+    elif event_type in ("payment.captured", "order.paid", "payment_link.paid"):
+        # All three are wired to the same handler: whichever fires first for
+        # a given order writes the outcome, and the handler is a no-op on the
+        # rest (see handle_payment_succeeded's docstring for the two no-op
+        # cases). This deliberately does not try to pick "the" canonical
+        # event of the three.
+        handle_payment_succeeded(db, payload)
         db.execute(
             update(WebhookEvent).where(WebhookEvent.id == row_id).values(processed_at=func.now())
         )
