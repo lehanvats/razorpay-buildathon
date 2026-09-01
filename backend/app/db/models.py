@@ -12,16 +12,17 @@ concern (the salary-window rule reasons in IST — see policy/rules.py).
 
 Step-01 implemented `webhook_events`; step-02 added `cases`; step-03 added
 `outcomes`; step-05 added the `cases.escalated_at`/`escalation_rule_id`/
-`escalation_reason` columns. `actions` and `audit_events` are still fenced
-off below rather than half-declared: a class inheriting Base with no primary
-key raises at import time, and a partially-declared table would produce a
-migration that lies about what a given step delivers.
+`escalation_reason` columns; step-06 added `actions` and `cases.last_diagnosed_at`.
+`audit_events` is still fenced off below rather than half-declared: a class
+inheriting Base with no primary key raises at import time, and a partially-
+declared table would produce a migration that lies about what a given step
+delivers.
 """
 
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -98,6 +99,16 @@ class Case(Base):
     escalation queue can list open escalations before step-07 exists."""
     escalation_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     """Verdict.explanation verbatim, for the human reviewer."""
+
+    last_diagnosed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """NULL until the first `advance_case` pass. This, not `status`, is what
+    `scheduler.poller.claim_new_cases` gates on: a proposal the gate BLOCKs
+    (e.g. CONTACT_COOLDOWN) leaves `status == "open"` with no `actions` row,
+    which is otherwise indistinguishable from a case that was never
+    diagnosed at all — without this column the poller would re-diagnose (and
+    re-spend an LLM call on) a blocked case every single poll tick."""
 
     def __repr__(self) -> str:
         return f"<Case {self.id} {self.failure_class}/{self.arm}>"
@@ -180,27 +191,81 @@ class WebhookEvent(Base):
         return f"<WebhookEvent {self.event_type} {self.event_id}>"
 
 
+class Action(Base):
+    """One approved, scheduled or executed intervention.
+
+    A row is written only after the policy gate approves — there is no path
+    from a Proposal to this table (`services/case_manager.advance_case`
+    calls `scheduler.poller.schedule`, never constructs this directly).
+    `scheduled_for` is what the poller claims on, which is why durable delay
+    needs no external service.
+
+    Claim/execution lifecycle, all nullable-until-set:
+        claimed_at    stamped by claim_due_actions under `FOR UPDATE SKIP
+                      LOCKED`; the second half of the poller's claim gate
+                      alongside `executed_at IS NULL`.
+        executed_at   stamped by dispatch() immediately before the first
+                      executor touches the network — "claim the action row
+                      before touching the network" from executors/base.py.
+                      A transport failure with retries left CLEARS both
+                      columns so the row is reclaimable; a permanent
+                      failure (dispatch_attempts exhausted, or the case
+                      moved on) leaves both set with result=False.
+        dispatch_attempts  transport-failure counter (Razorpay/Resend 5xx,
+                      timeouts), distinct from the NPCI charge-attempt
+                      budget on `cases.attempts_used` — a dispatch that
+                      never reached Razorpay must not consume a regulatory
+                      retry.
+        result        True/False once executed_at is set; None while
+                      pending.
+        razorpay_ref  the order or payment-link id an executor created, for
+                      later correlation (see PaymentLinkExecutor's
+                      `reference_id` and the payment_link.paid fallback
+                      lookup in case_manager.py).
+        payload_json  the full `Verdict` this action was scheduled from
+                      (`verdict.model_dump(mode="json")`), so dispatch() can
+                      reconstruct it without a second gate() call — the
+                      Executor protocol only knows Verdict, not Action.
+    """
+
+    __tablename__ = "actions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    case_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("cases.id"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    """An `ActionKind` value — `verdict.effective_action` at scheduling time."""
+
+    verdict_rule_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispatch_attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+
+    result: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    razorpay_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_actions_poller_claim", "scheduled_for", "executed_at", "claimed_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Action {self.id} {self.kind} case={self.case_id}>"
+
+
 # --------------------------------------------------------------------------
-# TODO(step-06/07): the remaining case tables.
+# TODO(step-07): audit_events.
 #
-# Deliberately commented out rather than declared empty. Uncomment each class
-# in its step and add columns; the shape below is the agreed schema.
-#
-# class Action(Base):
-#     """One approved, scheduled or executed intervention.
-#
-#     A row is written only after the policy gate approves — there is no path
-#     from a Proposal to this table. `scheduled_for` is what the poller claims
-#     on (see scheduler/), which is why durable delay needs no external service.
-#
-#     Columns:
-#         id, case_id, kind, verdict_rule_id, scheduled_for, executed_at,
-#         result, error, razorpay_ref (order/payment-link id), payload_json
-#     """
-#
-#     __tablename__ = "actions"
-#     # TODO(step-06): columns + index on (scheduled_for, executed_at) for the poller
-#
+# Deliberately commented out rather than declared empty. Uncomment in its
+# step and add columns; the shape below is the agreed schema.
 #
 # class AuditEvent(Base):
 #     """Append-only. Written exclusively by core/audit.py.
