@@ -9,12 +9,15 @@ rather than hitting an LLM (see tests/test_diagnose.py for diagnose() itself)
 tested policy gate.
 """
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import func, select
 
 from app.agent.diagnose import DiagnosisFailed
 from app.core.holdout import Arm
-from app.db.models import Case, Outcome
+from app.db.models import Action, Case, Outcome
+from app.policy.rules import MAX_CHARGE_ATTEMPTS
 from app.schemas.proposal import ActionKind, Proposal
 from app.services.case_manager import (
     advance_case,
@@ -271,9 +274,10 @@ def test_advance_case_does_not_touch_the_case_on_a_blocked_proposal(db_session, 
     assert case.escalation_rule_id is None
 
 
-def test_advance_case_does_not_touch_the_case_on_approval(db_session, monkeypatch):
-    """APPROVE/REWRITE has nothing durable to do until step-06's actions
-    table exists — advance_case must not claim an attempt was spent."""
+def test_advance_case_schedules_an_action_on_approval(db_session, monkeypatch):
+    """APPROVE/REWRITE writes an Action row for the poller to claim and
+    moves the case to "scheduled" — but must not itself claim an attempt was
+    spent; that's the executor's job, at actual dispatch time."""
     case_id = _treatment_case(
         db_session, monkeypatch, error_reason="gateway_technical_error"
     )  # SOFT_TECHNICAL
@@ -287,5 +291,139 @@ def test_advance_case_does_not_touch_the_case_on_approval(db_session, monkeypatc
     advance_case(db_session, case_id)
 
     case = db_session.get(Case, case_id)
-    assert case.status == "open"
+    assert case.status == "scheduled"
     assert case.attempts_used == attempts_before
+
+    action = db_session.execute(select(Action).where(Action.case_id == case_id)).scalar_one()
+    assert action.kind == ActionKind.SCHEDULE_RETRY.value
+    assert action.executed_at is None
+    assert action.payload_json["rule_id"] == "PASS"
+
+
+def test_advance_case_marks_exhausted_on_attempt_budget_block(db_session, monkeypatch):
+    """ATTEMPT_BUDGET_EXHAUSTED is the one BLOCK rule that means "stop
+    permanently" (per its own docstring in policy/rules.py) — unlike other
+    BLOCKs, this one gives the case a terminal exit path so it isn't left
+    silently "open" forever."""
+    case_id = _treatment_case(db_session, monkeypatch, error_reason="gateway_technical_error")
+    case = db_session.get(Case, case_id)
+    case.attempts_used = MAX_CHARGE_ATTEMPTS
+    db_session.flush()
+    _stub_diagnose(
+        monkeypatch,
+        Proposal(action=ActionKind.SCHEDULE_RETRY, confidence=0.9, reasoning="retry it"),
+    )
+
+    advance_case(db_session, case_id)
+
+    updated = db_session.get(Case, case_id)
+    assert updated.status == "exhausted"
+    assert updated.escalation_rule_id is None  # exhausted, not escalated — no human queue entry
+
+
+def test_payment_succeeded_derives_via_from_the_most_recent_successful_action(db_session):
+    case_id = _treatment_case_noop(db_session)
+    action = Action(
+        id="action_retry_1",
+        case_id=case_id,
+        kind=ActionKind.SCHEDULE_RETRY.value,
+        verdict_rule_id="PASS",
+        scheduled_for=datetime.now(UTC),
+        executed_at=datetime.now(UTC),
+        result=True,
+        razorpay_ref="order_RETRY_NEW",
+    )
+    db_session.add(action)
+    db_session.flush()
+
+    handle_payment_succeeded(db_session, _paid_event())
+
+    outcome = db_session.get(Outcome, case_id)
+    assert outcome.via == "retry"
+
+
+def test_payment_link_paid_falls_back_to_reference_id_when_order_id_does_not_match(db_session):
+    """A payment link is its own new Order (see corrections.md #6): its
+    order_id never matches cases.razorpay_order_id, so the handler must fall
+    back to `payment_link.entity.reference_id`, which
+    integrations.razorpay_client.create_payment_link stamps with the case
+    id."""
+    case_id = _treatment_case_noop(db_session)
+    action = Action(
+        id="action_link_1",
+        case_id=case_id,
+        kind=ActionKind.SEND_PAYMENT_LINK.value,
+        verdict_rule_id="PASS",
+        scheduled_for=datetime.now(UTC),
+        executed_at=datetime.now(UTC),
+        result=True,
+        razorpay_ref="plink_1",
+    )
+    db_session.add(action)
+    db_session.flush()
+
+    event = {
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_LINK",
+                    "order_id": "order_THE_LINKS_OWN_ORDER",  # deliberately not the case's order
+                    "amount": 149900,
+                }
+            },
+            "payment_link": {"entity": {"id": "plink_1", "reference_id": case_id}},
+        }
+    }
+
+    handle_payment_succeeded(db_session, event)
+
+    case = db_session.get(Case, case_id)
+    assert case.status == "recovered"
+    outcome = db_session.get(Outcome, case_id)
+    assert outcome is not None
+    assert outcome.via == "payment_link"
+
+
+def test_payment_succeeded_cancels_pending_actions(db_session):
+    """Charging a customer who already paid is the worst bug this system
+    could ship — a self-recovery must cancel any still-pending action."""
+    case_id = _treatment_case_noop(db_session)
+    pending = Action(
+        id="action_pending_1",
+        case_id=case_id,
+        kind=ActionKind.SCHEDULE_RETRY.value,
+        verdict_rule_id="PASS",
+        scheduled_for=datetime.now(UTC),
+    )
+    db_session.add(pending)
+    db_session.flush()
+
+    handle_payment_succeeded(db_session, _paid_event())
+
+    cancelled = db_session.get(Action, "action_pending_1")
+    assert cancelled.executed_at is not None
+    assert cancelled.result is False
+
+
+def _treatment_case_noop(db_session) -> str:
+    """A treatment case whose id we control, without going through
+    handle_payment_failed's assign_arm monkeypatch dance — these tests only
+    care about handle_payment_succeeded's behaviour."""
+    case = Case(
+        id="case_via_test",
+        razorpay_order_id="order_ABC",
+        razorpay_payment_id="pay_ABC",
+        amount_paise=149900,
+        currency="INR",
+        method="upi",
+        is_mandate=False,
+        failure_class="SOFT_FUNDS",
+        arm="treatment",
+        status="scheduled",
+        attempts_used=1,
+        messages_sent=0,
+        discount_offered=False,
+    )
+    db_session.add(case)
+    db_session.flush()
+    return case.id

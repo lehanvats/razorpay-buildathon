@@ -22,6 +22,14 @@ DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://recoup:recoup@localhost:55432/
 # Must happen before `app.config` is imported anywhere. Real env vars take
 # precedence over the .env file in pydantic-settings, so this wins.
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
+# Also pin the unpooled URL, not just the pooled one: Settings.migration_database_url
+# prefers DATABASE_URL_UNPOOLED when it's set, and .env carries a real (Neon)
+# value there once a dev has moved onto the pooled endpoint (see BUILD-PLAN.md).
+# Left unset, alembic migrations during tests would silently target Neon while
+# every actual query — through app.db.session.engine, built from DATABASE_URL —
+# still hits the local throwaway Postgres, leaving it permanently one migration
+# behind. Empty string falls back to DATABASE_URL, same as in production.
+os.environ["DATABASE_URL_UNPOOLED"] = ""
 os.environ["RAZORPAY_WEBHOOK_SECRET"] = TEST_WEBHOOK_SECRET
 
 from sqlalchemy import create_engine, text  # noqa: E402
