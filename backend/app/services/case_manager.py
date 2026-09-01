@@ -28,10 +28,12 @@ from sqlalchemy import select
 from app.agent.diagnose import DiagnosisFailed, diagnose
 from app.core.holdout import Arm, assign_arm
 from app.core.taxonomy import FailureClass, classify
-from app.db.models import Case, Outcome
+from app.db.models import Action, Case, Outcome
 from app.policy.gate import gate
 from app.policy.rules import MAX_CHARGE_ATTEMPTS, MAX_MESSAGES_PER_CASE
 from app.policy.snapshot import CaseSnapshot
+from app.scheduler.poller import cancel as cancel_scheduled_action
+from app.scheduler.poller import schedule as schedule_action
 from app.schemas.proposal import ActionKind, Decision
 
 #: Once a case reaches one of these, advance_case is a no-op — re-entrant
@@ -112,16 +114,14 @@ def handle_payment_failed(session: Any, event: dict) -> str:
     session.add(case)
     session.flush()
 
-    # TODO(step-06): if is_actionable(arm): advance_case(session, case_id)
-    # Deliberately not wired yet even though advance_case is fully
-    # implemented below. Two blockers, both step-06's: (1) advance_case
-    # calls diagnose(), a synchronous LLM round-trip — running that inline
-    # in the webhook handler would blow Razorpay's fast-2xx expectation;
-    # (2) an APPROVE/REWRITE verdict has nowhere durable to go yet (no
-    # `actions` table for a poller to claim from), so calling it here would
-    # diagnose and gate a case and then discard the verdict. Once step-06
-    # adds the actions table and a way to run this off the request path
-    # (e.g. a background task queued here), this becomes a real call.
+    # Deliberately NOT calling advance_case here, even for actionable
+    # (treatment) cases: advance_case calls diagnose(), a synchronous LLM
+    # round-trip, and running that inline would blow Razorpay's fast-2xx
+    # expectation. Instead the case is left `status == "open"` with
+    # `last_diagnosed_at IS NULL`, and scheduler.poller.claim_new_cases
+    # picks it up on its next tick, off the request path entirely. See that
+    # module's docstring for why a poller pass was chosen over a FastAPI
+    # BackgroundTask on this route.
 
     return case_id
 
@@ -216,19 +216,95 @@ def advance_case(session: Any, case_id: str) -> None:
         return
 
     if verdict.decision == Decision.BLOCK:
+        if verdict.rule_id == "ATTEMPT_BUDGET_EXHAUSTED":
+            # The one BLOCK rule that means "permanently stop", not just
+            # "not this proposal" — attempt_budget's own docstring says NPCI
+            # caps the retry count "then stop permanently". HARD_DECLINE_BLOCK
+            # is deliberately NOT given the same treatment here: an existing
+            # step-05 test (test_advance_case_does_not_touch_the_case_on_a_
+            # blocked_proposal) pins `status` unchanged on that path, and
+            # hard-decline cases have no action-driven exit condition the way
+            # attempt exhaustion does — see corrections.md for the residual
+            # gap this leaves.
+            case.status = "exhausted"
+            session.flush()
         # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
         #   event_type=EventType.POLICY_BLOCKED, payload={"rule_id": verdict.rule_id})
         return
 
     # APPROVE or REWRITE: verdict.effective_action/effective_timing is what
-    # should actually run. Deliberately a no-op beyond this point — writing
-    # to `case` here (attempts_used, messages_sent) would claim an attempt
-    # was spent before any executor has actually spent it.
-    # TODO(step-06): write an Action row (kind=verdict.effective_action,
-    #   scheduled_for=verdict.effective_timing, verdict_rule_id=verdict.rule_id)
-    #   once the `actions` table exists, for the poller to claim.
+    # should actually run. Deliberately not touching attempts_used /
+    # messages_sent here — that would claim an attempt was spent before any
+    # executor has actually spent it. Those counters are owned by the
+    # executors themselves (see executors/retry.py, executors/dunning.py),
+    # in the same transaction as the network call they describe.
+    schedule_action(
+        session,
+        case_id=case_id,
+        kind=verdict.effective_action,
+        verdict=verdict,
+        run_at=verdict.effective_timing or now,
+    )
+    case.status = "scheduled"
+    session.flush()
     # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
     #   event_type=EventType.POLICY_APPROVED, payload={"rule_id": verdict.rule_id})
+
+
+#: Maps a *successfully executed* action's kind to Outcome.via. OFFER_DISCOUNT
+#: is realised through the same PaymentLinkExecutor as SEND_PAYMENT_LINK (a
+#: discounted link), so it reports the same via.
+_VIA_BY_ACTION_KIND = {
+    ActionKind.SCHEDULE_RETRY.value: "retry",
+    ActionKind.SEND_PAYMENT_LINK.value: "payment_link",
+    ActionKind.OFFER_DISCOUNT.value: "payment_link",
+}
+
+
+def _derive_via(session: Any, case_id: str) -> str:
+    """How the money actually came back, for `Outcome.via`.
+
+    Reads the case's most recent *successful* Action row. No such row means
+    no action has ever completed for this case — either it's a control case,
+    the agent hasn't acted yet, or every attempted action failed — so "self"
+    is the only truthful value, not an approximation.
+    """
+    action = session.execute(
+        select(Action)
+        .where(Action.case_id == case_id, Action.result.is_(True))
+        .order_by(Action.executed_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if action is None:
+        return "self"
+    return _VIA_BY_ACTION_KIND.get(action.kind, "self")
+
+
+def _find_case_by_payment_link_reference(session: Any, payload: dict) -> Case | None:
+    """Fallback correlation for `payment_link.paid`.
+
+    A payment link is its own new Razorpay Order, so its `order_id` never
+    matches `cases.razorpay_order_id` — see corrections.md. Instead,
+    `integrations.razorpay_client.create_payment_link` stamps the link's
+    `reference_id` with the case id, and that is what this reads back.
+    """
+    reference_id = payload.get("payment_link", {}).get("entity", {}).get("reference_id")
+    if not reference_id:
+        return None
+    return session.get(Case, reference_id)
+
+
+def _cancel_pending_actions(session: Any, case_id: str) -> None:
+    """Cancel every not-yet-executed action for a case that just recovered.
+
+    Charging (or messaging) a customer who has already paid is the worst bug
+    this system could ship.
+    """
+    pending = session.execute(
+        select(Action.id).where(Action.case_id == case_id, Action.executed_at.is_(None))
+    ).scalars()
+    for action_id in pending:
+        cancel_scheduled_action(session, action_id)
 
 
 def handle_payment_succeeded(session: Any, event: dict) -> None:
@@ -251,13 +327,25 @@ def handle_payment_succeeded(session: Any, event: dict) -> None:
       - A case that already has an outcome (Razorpay fires more than one of
         these three event types for a single recovery — e.g. payment.captured
         AND order.paid — and each redelivers independently).
-    """
-    entity = event["payload"]["payment"]["entity"]
-    order_id = entity["order_id"]
 
-    case = session.execute(
-        select(Case).where(Case.razorpay_order_id == order_id)
-    ).scalar_one_or_none()
+    `order_id` is read with `.get`, not `[...]`, specifically so a
+    `payment_link.paid` payload that omits it (or omits `payment` entirely)
+    falls through to the `reference_id` lookup instead of raising — the
+    general malformed-payload story is still step-07's (see corrections.md
+    #1), but this one specific path needs to reach the fallback to be
+    reachable at all.
+    """
+    payload = event.get("payload", {})
+    entity = payload.get("payment", {}).get("entity", {})
+    order_id = entity.get("order_id")
+
+    case = None
+    if order_id:
+        case = session.execute(
+            select(Case).where(Case.razorpay_order_id == order_id)
+        ).scalar_one_or_none()
+    if case is None:
+        case = _find_case_by_payment_link_reference(session, payload)
     if case is None:
         return
 
@@ -265,25 +353,26 @@ def handle_payment_succeeded(session: Any, event: dict) -> None:
     if existing_outcome is not None:
         return
 
-    # TODO(step-06): derive `via` from the case's most recent Action row
-    # (retry vs. payment_link) once the actions table exists. Until then no
-    # action has ever been taken on any case — advance_case is still
-    # NotImplementedError and never called — so every recovery observed here
-    # is, definitionally, a self-recovery.
+    amount_paise = entity.get("amount")
+    if amount_paise is None:
+        amount_paise = payload.get("payment_link", {}).get("entity", {}).get("amount_paid")
+    if amount_paise is None:
+        amount_paise = case.amount_paise
+
     outcome = Outcome(
         case_id=case.id,
-        recovered_amount_paise=entity["amount"],
+        recovered_amount_paise=amount_paise,
         recovered_at=datetime.now(UTC),
-        via="self",
+        via=_derive_via(session, case.id),
         arm_at_recovery=case.arm,
     )
     session.add(outcome)
 
     case.status = "recovered"
     case.closed_at = outcome.recovered_at
-    # TODO(step-06): cancel any pending scheduled Action row for this case.
+    _cancel_pending_actions(session, case.id)
     # TODO(step-07): audit.record(session, case_id=case.id, actor=Actor.WEBHOOK,
-    #   event_type=EventType.RECOVERED, payload={"amount_paise": entity["amount"]})
+    #   event_type=EventType.RECOVERED, payload={"amount_paise": amount_paise})
 
     session.flush()
 
