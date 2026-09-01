@@ -10,17 +10,17 @@ Money is stored in paise as an integer everywhere. Never float, never rupees.
 Timestamps are timezone-aware UTC in the column; IST is a presentation
 concern (the salary-window rule reasons in IST — see policy/rules.py).
 
-Step-01 implemented `webhook_events`; step-02 adds `cases`. `actions`,
-`audit_events` and `outcomes` are still fenced off below rather than
-half-declared: a class inheriting Base with no primary key raises at import
-time, and a partially-declared table would produce a migration that lies
-about what a given step delivers.
+Step-01 implemented `webhook_events`; step-02 added `cases`; step-03 adds
+`outcomes`. `actions` and `audit_events` are still fenced off below rather
+than half-declared: a class inheriting Base with no primary key raises at
+import time, and a partially-declared table would produce a migration that
+lies about what a given step delivers.
 """
 
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -93,6 +93,38 @@ class Case(Base):
         return f"<Case {self.id} {self.failure_class}/{self.arm}>"
 
 
+class Outcome(Base):
+    """Terminal result of a case — how the money came back, if it did.
+
+    Written for control cases too. A control case that self-recovers MUST
+    land here, otherwise the control recovery rate reads as zero and the
+    incremental metric flatters us. See services/case_manager.handle_payment_succeeded.
+
+    One row per case (`case_id` is the primary key): a case reaches a
+    terminal recovered state at most once, so there is nothing to append.
+    """
+
+    __tablename__ = "outcomes"
+
+    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), primary_key=True)
+
+    recovered_amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    recovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    via: Mapped[str] = mapped_column(String(16), nullable=False)
+    """retry | payment_link | self | none. Until step-06 adds the `actions`
+    table there is nothing to correlate a recovery against, so every recovery
+    is currently written as "self" — see TODO(step-06) in case_manager.py."""
+
+    arm_at_recovery: Mapped[str] = mapped_column(String(16), nullable=False)
+    """Snapshot of `cases.arm` at recovery time. Denormalised on purpose: the
+    metrics query (services/metrics.py) group-bys this table alone and should
+    not need a join back to `cases` to compute the control/treatment split."""
+
+    def __repr__(self) -> str:
+        return f"<Outcome {self.case_id} {self.recovered_amount_paise}p via {self.via}>"
+
+
 class WebhookEvent(Base):
     """Raw Razorpay webhook payloads, stored before any processing.
 
@@ -139,7 +171,7 @@ class WebhookEvent(Base):
 
 
 # --------------------------------------------------------------------------
-# TODO(step-03/06/07): the remaining case tables.
+# TODO(step-06/07): the remaining case tables.
 #
 # Deliberately commented out rather than declared empty. Uncomment each class
 # in its step and add columns; the shape below is the agreed schema.
@@ -172,20 +204,4 @@ class WebhookEvent(Base):
 #
 #     __tablename__ = "audit_events"
 #     # TODO(step-07): columns + index on (case_id, ts) for timeline rendering
-#
-#
-# class Outcome(Base):
-#     """Terminal result of a case — how the money came back, if it did.
-#
-#     Written for control cases too. A control case that self-recovers MUST
-#     land here, otherwise the control recovery rate reads as zero and the
-#     incremental metric flatters us. See services/case_manager.py.
-#
-#     Columns:
-#         case_id (pk), recovered_amount_paise, recovered_at,
-#         via (retry | payment_link | self | none), arm_at_recovery
-#     """
-#
-#     __tablename__ = "outcomes"
-#     # TODO(step-03): columns
 # --------------------------------------------------------------------------
