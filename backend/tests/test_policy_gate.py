@@ -49,7 +49,8 @@ def test_attempt_budget_allows_fourth_attempt_and_blocks_fifth(snapshot_factory,
     proposal = proposal_factory(action=ActionKind.SCHEDULE_RETRY)
 
     allowed = gate(snapshot_factory(attempts_used=3), proposal)
-    assert allowed.decision != Decision.BLOCK
+    assert allowed.decision == Decision.APPROVE
+    assert allowed.rule_id == "PASS"
 
     blocked = gate(snapshot_factory(attempts_used=MAX_CHARGE_ATTEMPTS), proposal)
     assert blocked.decision == Decision.BLOCK
@@ -64,8 +65,8 @@ def test_payment_link_does_not_consume_attempt_budget(snapshot_factory, proposal
 
     verdict = gate(snapshot, proposal)
 
-    assert verdict.decision != Decision.BLOCK
-    assert verdict.rule_id != RuleId.ATTEMPT_BUDGET_EXHAUSTED
+    assert verdict.decision == Decision.APPROVE
+    assert verdict.rule_id == "PASS"
 
 
 def test_mandate_retry_requires_pre_debit_notice(snapshot_factory, proposal_factory):
