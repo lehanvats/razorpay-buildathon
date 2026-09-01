@@ -112,3 +112,15 @@ class Verdict(BaseModel):
     explanation: str = Field(
         description="Human-readable reason, shown on the case timeline next to the rule_id badge.",
     )
+    message_draft: str | None = Field(
+        default=None,
+        description="Carried through from the proposal verbatim -- no rule "
+        "rewrites customer-facing copy. Executors take only a Verdict, "
+        "never the original Proposal, so this is how DunningExecutor and "
+        "PreDebitNoticeExecutor reach the drafted text.",
+    )
+    channel: Channel | None = Field(
+        default=None,
+        description="Carried through from the proposal verbatim, for the "
+        "same reason as message_draft.",
+    )

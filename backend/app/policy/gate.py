@@ -88,6 +88,8 @@ def gate(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict:
             effective_action=proposal.action,
             effective_timing=proposal.timing,
             effective_discount_percent=proposal.discount_percent,
+            message_draft=proposal.message_draft,
+            channel=proposal.channel,
             explanation="No policy rule applied; proposal approved as submitted.",
         )
 
@@ -97,5 +99,7 @@ def gate(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict:
         effective_action=current.action,
         effective_timing=current.timing,
         effective_discount_percent=current.discount_percent,
+        message_draft=current.message_draft,
+        channel=current.channel,
         explanation=last_rewrite.explanation,
     )
