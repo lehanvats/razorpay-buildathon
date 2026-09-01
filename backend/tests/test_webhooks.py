@@ -188,6 +188,61 @@ def test_payment_captured_closes_the_case_it_recovered(client, db_session):
     assert outcome.recovered_amount_paise == 149900
 
 
+RAW_ORDER_PAID = (
+    b'{"event": "order.paid", "account_id": "acc_TEST",\n'
+    b'  "contains": ["payment", "order"],\n'
+    b'  "payload": {'
+    b'"payment": {"entity": {"id": "pay_TEST0001",'
+    b' "order_id": "order_TEST0001", "amount": 149900, "currency": "INR",'
+    b' "method": "upi"}},'
+    b'"order": {"entity": {"id": "order_TEST0001", "amount": 149900,'
+    b' "amount_paid": 149900, "status": "paid"}}'
+    b"},\n"
+    b'  "created_at": 1756684950}'
+)
+
+RAW_PAYMENT_LINK_PAID = (
+    b'{"event": "payment_link.paid", "account_id": "acc_TEST",\n'
+    b'  "contains": ["payment_link", "payment", "order"],\n'
+    b'  "payload": {'
+    b'"payment": {"entity": {"id": "pay_TEST0001",'
+    b' "order_id": "order_TEST0001", "amount": 149900, "currency": "INR",'
+    b' "method": "upi"}},'
+    b'"payment_link": {"entity": {"id": "plink_TEST0001", "status": "paid"}}'
+    b"},\n"
+    b'  "created_at": 1756684975}'
+)
+
+
+def test_order_paid_closes_the_case_it_recovered(client, db_session):
+    """`order.paid` carries both an order and a payment entity — confirms
+    the handler reads the payment entity correctly in this shape too, not
+    just payment.captured's."""
+    client.post(URL, content=RAW_PAYMENT_FAILED, headers=_headers(RAW_PAYMENT_FAILED))
+    case_id = db_session.execute(select(Case)).scalar_one().id
+
+    response = client.post(
+        URL, content=RAW_ORDER_PAID, headers=_headers(RAW_ORDER_PAID, event_id="evt_TEST0004")
+    )
+    assert response.status_code == 200
+    assert db_session.get(Case, case_id).status == "recovered"
+    assert db_session.get(Outcome, case_id) is not None
+
+
+def test_payment_link_paid_closes_the_case_it_recovered(client, db_session):
+    client.post(URL, content=RAW_PAYMENT_FAILED, headers=_headers(RAW_PAYMENT_FAILED))
+    case_id = db_session.execute(select(Case)).scalar_one().id
+
+    response = client.post(
+        URL,
+        content=RAW_PAYMENT_LINK_PAID,
+        headers=_headers(RAW_PAYMENT_LINK_PAID, event_id="evt_TEST0005"),
+    )
+    assert response.status_code == 200
+    assert db_session.get(Case, case_id).status == "recovered"
+    assert db_session.get(Outcome, case_id) is not None
+
+
 def test_payment_captured_for_an_order_with_no_case_is_a_noop(client, db_session):
     """A payment that succeeded on the first try never opened a case — the
     capture event must not error just because there's nothing to close."""
