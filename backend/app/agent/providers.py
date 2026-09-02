@@ -10,6 +10,7 @@ Providers return raw text. Parsing and schema validation happen once, in
 diagnose.py, so a provider swap cannot change the validation behaviour.
 """
 
+import importlib
 from typing import Protocol
 
 
@@ -41,6 +42,30 @@ class LLMUnavailable(RuntimeError):
     """
 
 
+def _import_sdk(sdk_label: str, *module_names: str):
+    """Import each of `module_names`, or raise LLMUnavailable naming
+    `sdk_label` if any is missing.
+
+    Every provider's SDK is in requirements.txt but not every dev
+    environment has it installed, and a module-top import would make this
+    whole package unimportable (breaking diagnose.py, and every test that
+    touches it) on a machine that never calls that provider — so each
+    provider imports its SDK lazily, inside complete(), through this helper.
+    """
+    try:
+        modules = tuple(importlib.import_module(name) for name in module_names)
+    except ImportError as exc:
+        raise LLMUnavailable(f"{sdk_label} SDK is not installed") from exc
+    return modules[0] if len(modules) == 1 else modules
+
+
+def _require_api_key(value: str, env_name: str) -> str:
+    """Return `value`, or raise LLMUnavailable naming the missing env var."""
+    if not value:
+        raise LLMUnavailable(f"{env_name} is not configured")
+    return value
+
+
 class GroqProvider:
     """Primary. openai/gpt-oss-120b via Groq's OpenAI-compatible chat API.
 
@@ -51,22 +76,13 @@ class GroqProvider:
     name = "groq"
 
     def complete(self, system: str, user: str) -> str:
-        # Imported lazily: `groq` is in requirements.txt but not every dev
-        # environment has it installed, and a module-top import would make
-        # this whole package unimportable (breaking diagnose.py, and every
-        # test that touches it) on a machine that never calls Groq.
-        try:
-            import groq
-            from groq import Groq
-        except ImportError as exc:
-            raise LLMUnavailable("groq SDK is not installed") from exc
+        groq = _import_sdk("groq", "groq")
 
         from app.config import settings
 
-        if not settings.groq_api_key:
-            raise LLMUnavailable("GROQ_API_KEY is not configured")
+        api_key = _require_api_key(settings.groq_api_key, "GROQ_API_KEY")
 
-        client = Groq(api_key=settings.groq_api_key)
+        client = groq.Groq(api_key=api_key)
         try:
             response = client.chat.completions.create(
                 model=settings.groq_model,
@@ -109,21 +125,13 @@ class AnthropicProvider:
     name = "anthropic"
 
     def complete(self, system: str, user: str) -> str:
-        # Imported lazily: `anthropic` is in requirements.txt but not every
-        # dev environment has it installed, and a module-top import would
-        # make this whole package unimportable (breaking diagnose.py, and
-        # every test that touches it) on a machine that never calls Claude.
-        try:
-            import anthropic
-        except ImportError as exc:
-            raise LLMUnavailable("anthropic SDK is not installed") from exc
+        anthropic = _import_sdk("anthropic", "anthropic")
 
         from app.config import settings
 
-        if not settings.anthropic_api_key:
-            raise LLMUnavailable("ANTHROPIC_API_KEY is not configured")
+        api_key = _require_api_key(settings.anthropic_api_key, "ANTHROPIC_API_KEY")
 
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = anthropic.Anthropic(api_key=api_key)
         try:
             response = client.messages.create(
                 model=settings.anthropic_model,
@@ -149,19 +157,13 @@ class GeminiProvider:
     name = "gemini"
 
     def complete(self, system: str, user: str) -> str:
-        # Lazy import — see AnthropicProvider.complete for why.
-        try:
-            from google import genai
-            from google.genai import types
-        except ImportError as exc:
-            raise LLMUnavailable("google-genai SDK is not installed") from exc
+        genai, types = _import_sdk("google-genai", "google.genai", "google.genai.types")
 
         from app.config import settings
 
-        if not settings.gemini_api_key:
-            raise LLMUnavailable("GEMINI_API_KEY is not configured")
+        api_key = _require_api_key(settings.gemini_api_key, "GEMINI_API_KEY")
 
-        client = genai.Client(api_key=settings.gemini_api_key)
+        client = genai.Client(api_key=api_key)
         try:
             response = client.models.generate_content(
                 model=settings.gemini_model,
