@@ -3,6 +3,10 @@
 // `eligible` excludes hard declines. Label that on the chart itself — an
 // unexplained drop between failed and eligible reads as attrition when it is
 // actually us correctly refusing to chase unrecoverable payments.
+//
+// Each bar carries its share of `failed` as well as its count: a bar's
+// length is only legible relative to the top of the funnel, and showing the
+// percentage means the reader does not have to do that division by eye.
 
 import type { FunnelCounts } from '@/api/types'
 
@@ -17,43 +21,41 @@ export function FunnelChart({ funnel }: { funnel: FunnelCounts }) {
   const max = Math.max(funnel.failed, 1)
 
   return (
-    <div className="card">
-      <div style={{ fontWeight: 600, marginBottom: '1rem' }}>Funnel</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+    <section className="card">
+      <h2 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>
+        Funnel
+      </h2>
+      <ol className="funnel" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {STAGES.map((stage) => {
           const value = funnel[stage.key]
-          const width = max > 0 ? (value / max) * 100 : 0
+          const share = (value / max) * 100
           return (
-            <div key={stage.key}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: '0.85rem',
-                  marginBottom: '0.2rem',
-                }}
-              >
+            <li key={stage.key}>
+              <div className="funnel-head">
                 <span>
                   {stage.label}
                   {stage.hint && <span className="muted"> — {stage.hint}</span>}
                 </span>
-                <span className="mono">{value}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  <span className="funnel-count">{value}</span>
+                  {/* Separated by a middot: "100 100%" set as bare adjacent
+                    * numbers reads as one malformed figure. */}
+                  <span className="muted" style={{ fontSize: 'var(--text-sm)' }}>
+                    {' · '}
+                    {share.toFixed(0)}%
+                  </span>
+                </span>
               </div>
-              <div style={{ background: 'var(--line)', borderRadius: 6, height: 10 }}>
-                <div
-                  style={{
-                    width: `${width}%`,
-                    background: 'var(--accent)',
-                    height: '100%',
-                    borderRadius: 6,
-                    transition: 'width 300ms ease',
-                  }}
-                />
+              {/* The bar duplicates a number already printed beside it, so it
+               * is decorative to assistive tech rather than a second, noisier
+               * reading of the same value. */}
+              <div className="funnel-track" aria-hidden="true">
+                <div className="funnel-fill" style={{ width: `${share}%` }} />
               </div>
-            </div>
+            </li>
           )
         })}
-      </div>
-    </div>
+      </ol>
+    </section>
   )
 }

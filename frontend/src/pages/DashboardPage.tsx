@@ -11,6 +11,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { api } from '@/api/client'
+import { ErrorNote, Loading } from '@/components/PageState'
 import { ClassBreakdown } from '@/components/dashboard/ClassBreakdown'
 import { ControlGroupPanel } from '@/components/dashboard/ControlGroupPanel'
 import { FunnelChart } from '@/components/dashboard/FunnelChart'
@@ -23,11 +24,19 @@ export default function DashboardPage() {
     refetchInterval: 4_000,
   })
 
-  if (isLoading) return <p className="muted">Loading…</p>
-  if (error || !metrics) return <p style={{ color: 'var(--danger)' }}>Could not load the dashboard.</p>
+  if (isLoading) return <Loading what="the dashboard" />
+  if (error || !metrics) return <ErrorNote>Could not load the dashboard.</ErrorNote>
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div className="stack">
+      <header className="page-head">
+        <h1 className="page-title">Recovery</h1>
+        <p className="page-sub">
+          Gross is what every vendor in this market reports. Incremental is what a live 20%
+          holdout says we actually caused. Both are on screen, at the same size.
+        </p>
+      </header>
+
       <RecoveryCounters metrics={metrics} />
       <FunnelChart funnel={metrics.funnel} />
       <ClassBreakdown metrics={metrics} />
