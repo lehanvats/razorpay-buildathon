@@ -120,10 +120,32 @@
   --radius: 10px;
   --radius-lg: 14px;
 
-  /* Swiss style takes its depth from rules and tone, not soft shadows.
-   * These are deliberately tight and low-opacity. */
-  --shadow-sm: 0 1px 2px rgb(16 21 27 / 0.05);
-  --shadow: 0 1px 3px rgb(16 21 27 / 0.07), 0 1px 2px rgb(16 21 27 / 0.04);
+  /* Blade's own elevation ramp (`tokens/global/elevation/elevation.web.ts`,
+   * read from source, not eyeballed) — lowRaised for small/inline elements,
+   * midRaised for anything that should read as a raised tile. */
+  --shadow-sm: 0px 2px 4px 0px hsla(200, 10%, 18%, 0.06);
+  --shadow: 0px 16px 12px 0px hsla(200, 10%, 18%, 0.06);
+
+  /* .card's own elevation: Blade midRaised plus a 1px inset top highlight,
+   * so a tile catches light along its top edge like a physically raised
+   * surface. Composed here rather than layered from --shadow, since a
+   * highlight can't share a box-shadow property with a plain shadow token
+   * that other elements (.chart-tooltip) also consume unmodified. On light
+   * surfaces the highlight reads as a soft white catch-light; see the dark
+   * override below for why the value flips there. */
+  --card-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / 0.7);
+
+  /* Backdrop blur radii, Blade's own scale (`tokens/global/blur.ts`):
+   * low 4 / medium 8 / high 12. Cards get medium, the app bar — always over
+   * scrolling content — gets high. */
+  --blur-medium: 8px;
+  --blur-high: 12px;
+
+  /* Ambient wash strength — see body's background below. Faint in light
+   * mode, where a bright brand glow reads as a colour cast rather than
+   * mood; stronger in the dark override, matching the Agent Studio
+   * reference this palette is grounded in. */
+  --wash: color-mix(in srgb, var(--brand) 7%, transparent);
 
   /* An outline, not a box-shadow — see the :focus-visible rule for why.
    * --brand, not --control: the ring is a generic interactive-focus signal,
@@ -183,8 +205,17 @@
     --control-weak: #241f52;
     --control-ink: #bbb0f5;
 
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
+    /* Blade elevation, onDark. */
+    --shadow-sm: 0px 2px 4px 0px hsla(0, 0%, 0%, 0.32);
+    --shadow: 0px 2px 8px 0px hsla(0, 0%, 0%, 0.32);
+
+    /* The highlight flips to a faint light line, not white — a solid white
+     * inset on a near-black tile reads as a stray pixel, not a catch-light.
+     * Kept low-opacity enough to survive on top of the translucent card
+     * background below without blowing out the top edge. */
+    --card-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / 0.06);
+
+    --wash: color-mix(in srgb, var(--brand) 16%, transparent);
   }
 }
 
@@ -200,7 +231,13 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
+  /* A faint --brand radial wash under the flat --bg — the "Agent Studio
+   * glow" mood cue from round 2's plan, and the reason the app bar's
+   * backdrop-filter has something to actually blur instead of blurring a
+   * flat colour into itself. Fixed attachment so it stays put under the
+   * sticky, glassy app bar rather than scrolling out of view with it. */
+  background: radial-gradient(1100px 480px at 18% -8%, var(--wash), transparent 65%), var(--bg);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--text-base);
@@ -263,11 +300,17 @@ table,
 /* ------------------------------------------------------------ primitives */
 
 .card {
-  background: var(--surface);
+  /* Translucent, not solid --surface: a card that's actually see-through
+   * needs the ambient wash on body (below) behind it to read as glass at
+   * all, and 92% keeps text at effectively the same contrast as the old
+   * solid surface — see the contrast re-audit noted in corrections.md. */
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(var(--blur-medium));
+  -webkit-backdrop-filter: blur(var(--blur-medium));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-5);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--card-shadow);
   /* A grid/flex item's inline-axis min-width defaults to its content's
    * min-content size, not 0 — so a card placed as an item in any grid or
    * flex row (.dashboard-split, .cases-layout, .case-detail-layout, and
@@ -444,7 +487,12 @@ table {
   justify-content: space-between;
   gap: var(--space-4);
   padding: 0 var(--space-5);
-  background: var(--surface);
+  /* Frosted, not solid: this is the one surface that's always over
+   * scrolling content, so it's the one place blur.high (Blade's own
+   * heaviest backdrop-blur step) earns its keep. */
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(var(--blur-high));
+  -webkit-backdrop-filter: blur(var(--blur-high));
   border-bottom: 1px solid var(--line);
 }
 
@@ -759,8 +807,17 @@ table {
   font-size: var(--text-sm);
 }
 
+/* min-height reserves two lines' worth of space even for a hint that only
+ * needs one — .funnel-step is centered on its own natural height
+ * (.funnel-flow doesn't stretch steps to a common height), so a step whose
+ * hint wraps to two lines is taller than one that doesn't, and their
+ * arrows (each centered within its own step) land at different Y
+ * positions. Equalising every step's reserved height here is what keeps
+ * the arrows level across the row, not the arrows' own styling. */
 .funnel-step-hint {
   font-size: var(--text-xs);
+  line-height: 1.4;
+  min-height: 2.8em;
   margin-top: var(--space-1);
 }
 
@@ -836,6 +893,48 @@ table {
 
 .data-table tbody tr:hover td {
   background: var(--surface-2);
+}
+
+/* Dense variant for the docked list pane only (>=1100px, where
+ * .cases-list-pane actually sits beside the detail pane at as little as
+ * ~360-440px) — the table's own 780px min-width made Status render cut off
+ * mid-badge there, since .table-wrap's overflow-x: auto left it scrolled
+ * to its own left edge with no indication there was more to see. Recovered
+ * and Opened both duplicate what the docked detail pane already shows once
+ * a case is selected, so dropping them here loses nothing; the order id
+ * gets a wrap point since it's one unbroken token that otherwise can't
+ * shrink below its own width in a narrow column. */
+@media (min-width: 1100px) {
+  .cases-list-pane .data-table {
+    min-width: 0;
+    font-size: var(--text-sm);
+  }
+
+  .cases-list-pane .data-table th,
+  .cases-list-pane .data-table td {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* Truncated to one line with an ellipsis, not wrapped: order_xxxxxxxx is
+   * one unbroken token, and letting it wrap (overflow-wrap: anywhere)
+   * turned each id into a ragged 3-4 line stack that made every row far
+   * taller than its neighbours. The full id is one click away in the
+   * detail pane once a case is selected. */
+  .cases-list-pane .data-table .link-id {
+    display: inline-block;
+    max-width: 108px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+
+  .cases-list-pane .data-table th:nth-child(6),
+  .cases-list-pane .data-table td:nth-child(6),
+  .cases-list-pane .data-table th:nth-child(7),
+  .cases-list-pane .data-table td:nth-child(7) {
+    display: none;
+  }
 }
 
 .num {
@@ -936,12 +1035,22 @@ table {
   }
 }
 
+/* Opts OUT of .card's new elevation rather than into it: this is a resting
+ * placeholder with nothing on it, not a data tile, so it stays flat and
+ * recessed instead of competing with the docked list beside it for
+ * attention. Smaller than the old 220px, too — the hint doesn't need to
+ * fill the same vertical space a populated detail view would. */
 .cases-empty-hint {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 220px;
+  min-height: 120px;
   text-align: center;
+  background: var(--surface-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-style: dashed;
+  box-shadow: none;
 }
 
 /* ---------------------------------------------------------------- filters */
@@ -970,11 +1079,17 @@ table {
   color: var(--muted);
 }
 
+/* flex-basis: 100% forces a line break before this item regardless of how
+ * many of the three .fields above fit per row — at the docked pane's
+ * narrower widths that's sometimes 2, sometimes 1, and the count used to
+ * share a flex-wrap group. Pinning it here always keeps it own its own
+ * trailing line instead of sharing an uneven leftover row. */
 .result-count {
-  margin-left: auto;
+  flex-basis: 100%;
+  margin-top: var(--space-2);
+  text-align: right;
   font-size: var(--text-sm);
   color: var(--muted);
-  padding-bottom: var(--space-2);
 }
 
 /* --------------------------------------------------------------- timeline */
