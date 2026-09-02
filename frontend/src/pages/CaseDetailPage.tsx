@@ -2,6 +2,17 @@
 //
 // The explainability view. Deep-linkable by case id so the demo can jump
 // straight to the seeded HARD_DECLINE case where the gate blocks a retry.
+//
+// Facts sit in a narrow rail beside the timeline at >=720px, rather than a
+// full-width card stacked above it — the facts are reference data the
+// reader checks against, not the thing they came to read; a two-column
+// layout lets both stay on screen together on anything but a phone.
+// Deliberately NOT adding a second, derived summary of case state (e.g. a
+// stepper across the top) above this: CaseTimeline already IS that
+// summary, in full, and a second hand-built mapping from 15 event types to
+// N stepper stages is a second place for that mapping to be wrong — the
+// exact failure mode this file's own event-order and reasoning-verbatim
+// rules exist to prevent.
 
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -34,46 +45,48 @@ export default function CaseDetailPage() {
         back to cases
       </Link>
 
-      <section className={`card stack-tight${isControl ? ' card--control' : ''}`}>
-        <div className="row-between">
+      <div className="case-detail-layout">
+        <aside className={`card stack-tight case-facts-rail${isControl ? ' card--control' : ''}`}>
           <h1 className="mono" style={{ fontSize: 'var(--text-lg)', letterSpacing: '-0.01em' }}>
             {detail.orderId}
           </h1>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
             {isControl && <ToneBadge tone="control">held out — no action ever taken</ToneBadge>}
             <StatusBadge status={detail.status} />
           </div>
-        </div>
 
-        {/* The class hint is the strategy for this failure, stated where the
-         * class is named — it is the reason the rest of the timeline looks
-         * the way it does. */}
-        <p className="stat-note">{FAILURE_CLASS_HINT[detail.failureClass]}</p>
+          {/* The class hint is the strategy for this failure, stated where
+           * the class is named — it is the reason the rest of the timeline
+           * looks the way it does. */}
+          <p className="stat-note">{FAILURE_CLASS_HINT[detail.failureClass]}</p>
 
-        <div className="facts" style={{ marginTop: 'var(--space-3)' }}>
-          <Fact label="Class" value={FAILURE_CLASS_LABEL[detail.failureClass]} />
-          <Fact label="Arm" value={isControl ? 'Control (held out)' : 'Treatment'} />
-          <Fact label="Method" value={detail.method} mono />
-          <Fact label="Amount" value={formatPaise(detail.amountPaise)} mono />
-          <Fact
-            label="Recovered"
-            value={
-              detail.recoveredAmountPaise != null ? formatPaise(detail.recoveredAmountPaise) : '—'
-            }
-            mono
-            accent={detail.recoveredAmountPaise != null}
-          />
-          <Fact label="Attempts used" value={String(detail.attemptsUsed)} mono />
-          <Fact label="Opened" value={formatIST(detail.createdAt)} />
-        </div>
-      </section>
+          <div className="facts">
+            <Fact label="Class" value={FAILURE_CLASS_LABEL[detail.failureClass]} />
+            <Fact label="Arm" value={isControl ? 'Control (held out)' : 'Treatment'} />
+            <Fact label="Method" value={detail.method} mono />
+            <Fact label="Amount" value={formatPaise(detail.amountPaise)} mono />
+            <Fact
+              label="Recovered"
+              value={
+                detail.recoveredAmountPaise != null
+                  ? formatPaise(detail.recoveredAmountPaise)
+                  : '—'
+              }
+              mono
+              accent={detail.recoveredAmountPaise != null}
+            />
+            <Fact label="Attempts used" value={String(detail.attemptsUsed)} mono />
+            <Fact label="Opened" value={formatIST(detail.createdAt)} />
+          </div>
+        </aside>
 
-      <section className="card">
-        <h2 className="card-title" style={{ marginBottom: 'var(--space-5)' }}>
-          Audit trail
-        </h2>
-        <CaseTimeline entries={detail.timeline} />
-      </section>
+        <section className="card case-timeline-col">
+          <h2 className="card-title" style={{ marginBottom: 'var(--space-5)' }}>
+            Audit trail
+          </h2>
+          <CaseTimeline entries={detail.timeline} />
+        </section>
+      </div>
     </div>
   )
 }

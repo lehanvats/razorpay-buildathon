@@ -268,6 +268,16 @@ table,
   border-radius: var(--radius);
   padding: var(--space-5);
   box-shadow: var(--shadow-sm);
+  /* A grid/flex item's inline-axis min-width defaults to its content's
+   * min-content size, not 0 — so a card placed as an item in any grid or
+   * flex row (.dashboard-split, .cases-layout, .case-detail-layout, and
+   * whatever comes next) can hold that row open past its track's intended
+   * width and reintroduce the exact shell-level horizontal scroll .content
+   * already guards against with its own min-width: 0. Fixing it once here,
+   * on the primitive, is cheaper than re-discovering it at every call site
+   * — see .cases-detail-pane's own explicit min-width: 0 for the one place
+   * this alone doesn't reach, because it isn't a .card. */
+  min-width: 0;
 }
 
 /* Section label inside a card — the small caps rule that gives the Swiss
@@ -647,7 +657,10 @@ table {
  * illegible slivers. */
 .dashboard-split {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  /* minmax(0, ...), not bare fr tracks — see .cases-layout / .case-detail-layout
+   * for the concrete overflow this exact pattern caused elsewhere; fixing
+   * it here too before it has the chance to. */
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
 }
@@ -873,7 +886,14 @@ table {
 @media (min-width: 1100px) {
   .cases-layout {
     display: grid;
-    grid-template-columns: minmax(360px, 440px) 1fr;
+    /* minmax(0, 1fr), not bare 1fr: a bare 1fr track won't shrink below its
+     * content's min-content size, which is exactly how .content needed
+     * min-width: 0 and .tl-item needed minmax(0, 1fr) elsewhere in this
+     * file — the same defect, here reachable only once something wide
+     * (case-detail-layout, nested inside this pane) tries to sit in the
+     * second column. Confirmed by document.documentElement.scrollWidth
+     * exceeding clientWidth before this fix. */
+    grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
     gap: var(--space-6);
     align-items: start;
   }
@@ -885,6 +905,28 @@ table {
     position: sticky;
     top: 56px;
   }
+
+  /* min-width: 0 on the ITEM, not just minmax(0, 1fr) on the track above:
+   * a grid item's own inline-axis min-width defaults to auto (its
+   * min-content size), which is wide enough here — CaseDetailPage nests
+   * its own two-column grid inside this pane — to overflow the track even
+   * though the track itself can shrink to 0. Same fix CaseTimeline's own
+   * .tl-body already needed, one level further out. Dropping this
+   * reintroduces measured document-level horizontal scroll at ~1265-1284px
+   * viewports. */
+  .cases-detail-pane {
+    min-width: 0;
+  }
+}
+
+/* Query container for .case-detail-layout below: that layout's own
+ * two-column split needs to know how much width THIS pane actually has,
+ * not the viewport's. Unconditional (not gated by the 1100px media query
+ * above) because the pane is the layout's parent at every width — narrow
+ * when docked beside the cases list, full content width when standalone
+ * below 1100px or on a direct /cases/:id link. */
+.cases-detail-pane {
+  container-type: inline-size;
 }
 
 @media (max-width: 1099px) {
@@ -1069,6 +1111,56 @@ table {
 }
 
 /* ----------------------------------------------------------- detail facts */
+
+/* Facts rail beside the timeline, not stacked above it, once the pane
+ * hosting this layout has >=600px to give it — a phone still gets the old
+ * top-to-bottom reading order, since neither column has room to sit beside
+ * the other there.
+ *
+ * A @container query on .cases-detail-pane's inline size, not a @media
+ * query on the viewport: this layout is always rendered inside that pane
+ * (see CasesPage.tsx's <Outlet/>), which is only ever the full content
+ * width when standalone. When docked beside the cases list at >=1100px
+ * viewport width, the pane itself can be as narrow as ~245px — a @media
+ * query on the viewport fired there anyway, splitting into a 240px rail +
+ * a timeline column with no room left for its own 150px timestamp column,
+ * which is how the fixed columns forced real document-level horizontal
+ * overflow (measured: scrollWidth 1284 vs clientWidth 1265) that
+ * minmax(0, 1fr) and min-width: 0 alone could not fix — there was
+ * genuinely no space, not just an unshrunk track.
+ *
+ * 600px, not 720px: .content cellings out at max-width: 1180px, so the
+ * docked pane itself plateaus at 652px no matter how wide the window
+ * gets — a 720px threshold would make this split unreachable in the
+ * docked path entirely, the one most clicks actually take. Measured
+ * 652px comfortably fits a 240px rail + a ~350px timeline column at
+ * every width that clears 600px. */
+.case-detail-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+@container (min-width: 600px) {
+  .case-detail-layout {
+    display: grid;
+    /* minmax(0, 1fr), not bare 1fr — see the identical comment on
+     * .cases-layout above; this is the same defect, and this is the
+     * layout that actually exposed it (nested inside that docked pane, at
+     * a viewport where both split simultaneously). */
+    grid-template-columns: 240px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-5);
+  }
+
+  .case-facts-rail {
+    position: sticky;
+    top: 56px;
+  }
+
+  /* .case-timeline-col is a .card, so it already has min-width: 0 from
+   * that base rule — no extra rule needed here. */
+}
 
 .facts {
   display: grid;
