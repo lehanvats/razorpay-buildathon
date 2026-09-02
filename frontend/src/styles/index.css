@@ -97,7 +97,8 @@
   --shadow-sm: 0 1px 2px rgb(16 21 27 / 0.05);
   --shadow: 0 1px 3px rgb(16 21 27 / 0.07), 0 1px 2px rgb(16 21 27 / 0.04);
 
-  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--control);
+  /* An outline, not a box-shadow — see the :focus-visible rule for why. */
+  --ring: 2px solid var(--control);
   --transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -190,9 +191,19 @@ table,
   }
 }
 
+/* The focus ring is an `outline`, deliberately, and must stay one.
+ *
+ * `:where()` contributes nothing to specificity, so this rule is (0,1,0) — it
+ * loses to any component that owns its own box-shadow. The active nav item is
+ * exactly that: `.nav-item[aria-current='page']` is (0,2,0) and paints an inset
+ * accent rule, so a box-shadow ring here would be silently dropped and the
+ * current page's nav item would be the one link on screen with no focus
+ * indicator at all. `outline` sits in a different property, so nothing can
+ * shadow it; it also survives forced-colors mode, where box-shadows are
+ * dropped. Keep the low specificity — components should not have to opt in. */
 :where(a, button, select, input, [tabindex]):focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
+  outline: var(--ring);
+  outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 

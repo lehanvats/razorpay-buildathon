@@ -153,7 +153,13 @@ export function CaseTimeline({ entries }: { entries: TimelineEntry[] }) {
             </div>
             <div className="tl-body">
               <div className="tl-head">
-                <span className="tl-event">{EVENT_LABEL[entry.eventType]}</span>
+                {/* Falls back to the raw event type, matching EVENT_TONE and
+                  * EVENT_ICON: an event the backend adds before the frontend
+                  * knows about it should read as an unstyled but named node,
+                  * not as a correctly-drawn node with an empty label. */}
+                <span className="tl-event">
+                  {EVENT_LABEL[entry.eventType] ?? entry.eventType}
+                </span>
                 <span className="tl-actor">{entry.actor}</span>
               </div>
               <EntryDetail entry={entry} />

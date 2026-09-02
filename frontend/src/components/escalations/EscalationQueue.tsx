@@ -13,7 +13,7 @@
 // dozens of cases, that is the thing an operator needs to see first — the
 // queue is a symptom, the rule is the cause.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -27,18 +27,37 @@ function ResolveForm({ caseId }: { caseId: string }) {
   const [open, setOpen] = useState(false)
   const queryClient = useQueryClient()
 
+  // Closing the form unmounts the control the keyboard was on, which drops
+  // focus to <body>. On a queue this long that means being thrown back to the
+  // top of the page, so hand focus back to the button that opened the form.
+  // The ref guard keeps this from stealing focus on first mount.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const returnFocus = useRef(false)
+
+  useEffect(() => {
+    if (!open && returnFocus.current) {
+      returnFocus.current = false
+      triggerRef.current?.focus()
+    }
+  }, [open])
+
+  function close() {
+    returnFocus.current = true
+    setOpen(false)
+  }
+
   const resolve = useMutation({
     mutationFn: (note: string) => api.resolveEscalation(caseId, note),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['escalations'] })
-      setOpen(false)
+      close()
       setNote('')
     },
   })
 
   if (!open) {
     return (
-      <button className="btn" onClick={() => setOpen(true)}>
+      <button ref={triggerRef} className="btn" onClick={() => setOpen(true)}>
         Record decision
       </button>
     )
@@ -50,6 +69,9 @@ function ResolveForm({ caseId }: { caseId: string }) {
       onSubmit={(e) => {
         e.preventDefault()
         if (note.trim()) resolve.mutate(note.trim())
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') close()
       }}
     >
       <label className="field">
@@ -65,7 +87,7 @@ function ResolveForm({ caseId }: { caseId: string }) {
       <button type="submit" className="btn btn-primary" disabled={resolve.isPending}>
         {resolve.isPending ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" className="btn" onClick={() => setOpen(false)}>
+      <button type="button" className="btn" onClick={close}>
         Cancel
       </button>
       {/* A failed write must say so — otherwise the form just sits there and
