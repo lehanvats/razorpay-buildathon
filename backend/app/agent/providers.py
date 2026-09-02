@@ -18,6 +18,10 @@ class LLMProvider(Protocol):
     """Anything that can turn a system + user prompt into text."""
 
     name: str
+    fallback: str | None
+    """Name of the provider diagnose.py should fall back to on
+    LLMUnavailable, or None. Lives on the provider (not a separate table in
+    diagnose.py) so it can't drift out of sync with _PROVIDERS below."""
 
     def complete(self, system: str, user: str) -> str:
         """Return the model's raw text response.
@@ -74,6 +78,8 @@ class GroqProvider:
     """
 
     name = "groq"
+    fallback = "gemini"
+    """Gemini's free tier is the fallback for this paid-ish primary."""
 
     def complete(self, system: str, user: str) -> str:
         groq = _import_sdk("groq", "groq")
@@ -123,6 +129,8 @@ class AnthropicProvider:
     """
 
     name = "anthropic"
+    fallback = "gemini"
+    """Gemini's free tier is the fallback for this paid-ish primary."""
 
     def complete(self, system: str, user: str) -> str:
         anthropic = _import_sdk("anthropic", "anthropic")
@@ -155,6 +163,9 @@ class GeminiProvider:
     """
 
     name = "gemini"
+    fallback = "groq"
+    """Groq is Gemini's own fallback for the (rare) case someone configures
+    Gemini as primary instead."""
 
     def complete(self, system: str, user: str) -> str:
         genai, types = _import_sdk("google-genai", "google.genai", "google.genai.types")
@@ -174,9 +185,7 @@ class GeminiProvider:
             # google-genai's own exception hierarchy covers transport, auth
             # and rate-limit failures; treated uniformly here per this
             # provider's contract — any of those should trigger a fallback,
-            # not an escalation. Gemini is diagnose.py's fallback for either
-            # paid-ish primary, but has its own fallback to Groq when it is
-            # configured as the primary instead — see _FALLBACK_ORDER.
+            # not an escalation.
             raise LLMUnavailable(f"Gemini request failed: {exc}") from exc
 
         return response.text

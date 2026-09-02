@@ -39,6 +39,10 @@ class _RecordingProvider:
     call beyond what was supplied."""
 
     name = "recording"
+    fallback = None
+    """No default fallback — tests that want one pass fallback_provider
+    explicitly, so a stub without a real Groq/Gemini counterpart never
+    needs get_provider() to resolve anything."""
 
     def __init__(self, *responses: str | Exception):
         self._responses = list(responses)
