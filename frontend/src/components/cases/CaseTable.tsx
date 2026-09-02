@@ -2,10 +2,16 @@
 //
 // Control-arm rows are visually distinct and show no actions column — a
 // reviewer should be able to see at a glance that nothing was done to them.
+//
+// "Distinct" is a --control rule down the leading edge plus a faint tint of
+// the same hue, never a dimmed row: the holdout is the arm a sceptical
+// reader most wants to inspect, so it has to stay at full contrast. The arm
+// is also stated in words, so the distinction never rests on colour alone.
 
 import { Link } from 'react-router-dom'
 
 import type { CaseSummary } from '@/api/types'
+import { StatusBadge, ToneBadge } from '@/components/Tone'
 import { FAILURE_CLASS_LABEL } from '@/lib/constants'
 import { formatIST, formatPaise } from '@/lib/format'
 
@@ -15,63 +21,58 @@ export function CaseTable({ cases }: { cases: CaseSummary[] }) {
   }
 
   return (
-    <table>
-      <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--line)' }}>
-          <th style={{ padding: '0.5rem' }}>Order</th>
-          <th style={{ padding: '0.5rem' }}>Class</th>
-          <th style={{ padding: '0.5rem' }}>Arm</th>
-          <th style={{ padding: '0.5rem' }}>Status</th>
-          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount</th>
-          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Recovered</th>
-          <th style={{ padding: '0.5rem' }}>Opened</th>
-        </tr>
-      </thead>
-      <tbody>
-        {cases.map((c) => {
-          const isControl = c.arm === 'control'
-          return (
-            <tr
-              key={c.id}
-              style={{
-                borderBottom: '1px solid var(--line)',
-                opacity: isControl ? 0.7 : 1,
-              }}
-            >
-              <td style={{ padding: '0.5rem' }}>
-                <Link to={`/cases/${c.id}`} className="mono">
-                  {c.orderId}
-                </Link>
-              </td>
-              <td style={{ padding: '0.5rem' }}>{FAILURE_CLASS_LABEL[c.failureClass]}</td>
-              <td style={{ padding: '0.5rem' }}>
-                {isControl ? (
-                  <span
-                    className="badge"
-                    style={{ background: 'var(--control-weak)', color: 'var(--control)' }}
-                  >
-                    control — held out
-                  </span>
-                ) : (
-                  'treatment'
-                )}
-              </td>
-              <td style={{ padding: '0.5rem' }} className="mono">
-                {c.status}
-              </td>
-              <td style={{ padding: '0.5rem', textAlign: 'right' }} className="mono">
-                {formatPaise(c.amountPaise)}
-              </td>
-              <td style={{ padding: '0.5rem', textAlign: 'right' }} className="mono">
-                {c.recoveredAmountPaise != null ? formatPaise(c.recoveredAmountPaise) : '—'}
-              </td>
-              <td style={{ padding: '0.5rem' }} className="muted">
-                {formatIST(c.createdAt)}
-              </td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Class</th>
+            <th>Arm</th>
+            <th>Status</th>
+            <th style={{ textAlign: 'right' }}>Amount</th>
+            <th style={{ textAlign: 'right' }}>Recovered</th>
+            <th>Opened</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cases.map((c) => {
+            const isControl = c.arm === 'control'
+            return (
+              <tr key={c.id} className={isControl ? 'row-control' : undefined}>
+                <td>
+                  <Link to={`/cases/${c.id}`} className="link-id">
+                    {c.orderId}
+                  </Link>
+                </td>
+                <td>{FAILURE_CLASS_LABEL[c.failureClass]}</td>
+                <td>
+                  {isControl ? (
+                    <ToneBadge tone="control">held out</ToneBadge>
+                  ) : (
+                    <span className="muted">treatment</span>
+                  )}
+                </td>
+                <td>
+                  <StatusBadge status={c.status} />
+                </td>
+                <td className="num">{formatPaise(c.amountPaise)}</td>
+                <td className="num">
+                  {c.recoveredAmountPaise != null ? (
+                    <span style={{ color: 'var(--accent)' }}>
+                      {formatPaise(c.recoveredAmountPaise)}
+                    </span>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+                <td className="muted" style={{ whiteSpace: 'nowrap' }}>
+                  {formatIST(c.createdAt)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

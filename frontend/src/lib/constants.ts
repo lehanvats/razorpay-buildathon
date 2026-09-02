@@ -41,3 +41,33 @@ export const ARM_LABEL: Record<Arm, string> = {
   treatment: 'Treatment',
   control: 'Control (held out)',
 }
+
+/** The semantic families a badge can wear. Each maps to a `--x` / `--x-weak`
+ * / `--x-ink` token triple in styles/index.css; `neutral` is the un-tinted
+ * surface used for states that are simply in progress. */
+export type Tone = 'accent' | 'warn' | 'danger' | 'control' | 'neutral'
+
+/** Case statuses as the backend spells them (`app/db/models.py`). Unknown
+ * values fall back to the raw string and a neutral tone, so a status added
+ * on the backend degrades to plain text rather than rendering blank. */
+export const STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  scheduled: 'Scheduled',
+  awaiting_customer: 'Awaiting customer',
+  recovered: 'Recovered',
+  escalated: 'Escalated',
+  exhausted: 'Budget exhausted',
+  control_observed: 'Observed only',
+}
+
+export const STATUS_TONE: Record<string, Tone> = {
+  open: 'neutral',
+  scheduled: 'neutral',
+  awaiting_customer: 'neutral',
+  recovered: 'accent',
+  escalated: 'warn',
+  // Not a failure of the agent — the attempt budget ran out, which is the
+  // NPCI cap working. Amber rather than red.
+  exhausted: 'warn',
+  control_observed: 'control',
+}
