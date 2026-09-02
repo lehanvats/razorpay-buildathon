@@ -56,8 +56,8 @@ def diagnose(
             parameter so tests can pass a hand-rolled stub instead of
             hitting the network.
         fallback_provider: secondary provider tried once if `provider`
-            raises LLMUnavailable. Defaults to the other of
-            anthropic/gemini from providers.get_provider().
+            raises LLMUnavailable. Defaults to _FALLBACK_ORDER's entry for
+            `provider`'s name, resolved via providers.get_provider().
 
     Returns:
         A validated Proposal. Caller must pass it to the policy gate.
@@ -102,10 +102,23 @@ def diagnose(
     )
 
 
+_FALLBACK_ORDER: dict[str, str] = {
+    "groq": "gemini",
+    "anthropic": "gemini",
+    "gemini": "groq",
+}
+"""Gemini's free tier is the fallback for either paid-ish primary (Groq's
+free tier, Claude); Groq is Gemini's own fallback for the (rare) case
+someone configures Gemini as primary instead."""
+
+
 def _default_fallback(primary: LLMProvider) -> LLMProvider | None:
-    """The other of anthropic/gemini, so a transport failure on the primary
-    always has somewhere to fall back to without the caller naming one."""
-    other = "gemini" if primary.name == "anthropic" else "anthropic"
+    """A sensible secondary for `primary`, so a transport failure on the
+    primary always has somewhere to fall back to without the caller naming
+    one."""
+    other = _FALLBACK_ORDER.get(primary.name)
+    if other is None:
+        return None
     try:
         return get_provider(other)
     except ValueError:
