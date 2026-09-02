@@ -64,8 +64,11 @@ class Settings(BaseSettings):
     secret — Razorpay issues it separately when the webhook is configured."""
 
     # --- LLM ---
-    llm_provider: str = "anthropic"
-    """anthropic | gemini. Gemini's free tier is the Rs 0 fallback."""
+    llm_provider: str = "groq"
+    """groq | anthropic | gemini. Groq (openai/gpt-oss-120b) is primary;
+    Gemini's free tier is the Rs 0 fallback."""
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
     gemini_api_key: str = ""

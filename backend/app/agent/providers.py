@@ -1,8 +1,10 @@
 """LLM provider seam.
 
-One protocol, two implementations. Claude is the primary (Agent Studio's own
-stack); Gemini Flash's free tier is the zero-cost fallback so the demo can
-run at Rs 0 if credits run dry mid-buildathon.
+One protocol, several implementations. Groq (openai/gpt-oss-120b) is the
+primary — fast and generous free tier; Gemini Flash's free tier is the
+zero-cost fallback so the demo can run at Rs 0 if credits run dry
+mid-buildathon. Anthropic is kept as a third option for anyone who'd rather
+spend Claude credits than use Groq.
 
 Providers return raw text. Parsing and schema validation happen once, in
 diagnose.py, so a provider swap cannot change the validation behaviour.
@@ -39,8 +41,50 @@ class LLMUnavailable(RuntimeError):
     """
 
 
+class GroqProvider:
+    """Primary. openai/gpt-oss-120b via Groq's OpenAI-compatible chat API.
+
+    Model id lives in config (settings.groq_model) rather than here, so it
+    can be bumped without a code change.
+    """
+
+    name = "groq"
+
+    def complete(self, system: str, user: str) -> str:
+        # Imported lazily: `groq` is in requirements.txt but not every dev
+        # environment has it installed, and a module-top import would make
+        # this whole package unimportable (breaking diagnose.py, and every
+        # test that touches it) on a machine that never calls Groq.
+        try:
+            import groq
+            from groq import Groq
+        except ImportError as exc:
+            raise LLMUnavailable("groq SDK is not installed") from exc
+
+        from app.config import settings
+
+        if not settings.groq_api_key:
+            raise LLMUnavailable("GROQ_API_KEY is not configured")
+
+        client = Groq(api_key=settings.groq_api_key)
+        try:
+            response = client.chat.completions.create(
+                model=settings.groq_model,
+                max_tokens=1024,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+        except groq.APIError as exc:
+            raise LLMUnavailable(f"Groq request failed: {exc}") from exc
+
+        return response.choices[0].message.content or ""
+
+
 class AnthropicProvider:
-    """Primary. Claude via the `anthropic` SDK.
+    """Claude via the `anthropic` SDK. Not the default — kept as an
+    alternative for anyone who'd rather spend Claude credits than use Groq.
 
     Model id lives in config (settings.anthropic_model) rather than here, so
     it can be bumped without a code change.
@@ -119,6 +163,7 @@ class GeminiProvider:
 
 
 _PROVIDERS: dict[str, type[LLMProvider]] = {
+    "groq": GroqProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
 }
