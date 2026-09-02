@@ -172,7 +172,9 @@ class GeminiProvider:
             # google-genai's own exception hierarchy covers transport, auth
             # and rate-limit failures; treated uniformly here per this
             # provider's contract — any of those should trigger a fallback,
-            # not an escalation, and this is the last fallback in the chain.
+            # not an escalation. Gemini is diagnose.py's fallback for either
+            # paid-ish primary, but has its own fallback to Groq when it is
+            # configured as the primary instead — see _FALLBACK_ORDER.
             raise LLMUnavailable(f"Gemini request failed: {exc}") from exc
 
         return response.text
