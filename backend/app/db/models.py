@@ -13,7 +13,7 @@ concern (the salary-window rule reasons in IST — see policy/rules.py).
 Step-01 implemented `webhook_events`; step-02 added `cases`; step-03 added
 `outcomes`; step-05 added the `cases.escalated_at`/`escalation_rule_id`/
 `escalation_reason` columns; step-06 added `actions` and `cases.last_diagnosed_at`;
-step-07 added `audit_events`.
+step-07 added `audit_events`; step-08 added `cases.demo_loose_prompt`.
 """
 
 from datetime import datetime
@@ -106,6 +106,15 @@ class Case(Base):
     which is otherwise indistinguishable from a case that was never
     diagnosed at all — without this column the poller would re-diagnose (and
     re-spend an LLM call on) a blocked case every single poll tick."""
+
+    demo_loose_prompt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    """Demo-only. `services.seeding.seed_batch` sets this True on exactly one
+    seeded HARD_DECLINE case so `advance_case` diagnoses it with
+    `agent.prompts.DEMO_LOOSE_SYSTEM_PROMPT` instead of the real system
+    prompt — the model then proposes a retry on an unrecoverable case and
+    `policy.rules.hard_decline_block` is seen refusing it, on screen, with
+    its rule_id. That is the 3:00 beat of the demo video (BUILD-PLAN.md).
+    Never true outside a seeded demo case."""
 
     def __repr__(self) -> str:
         return f"<Case {self.id} {self.failure_class}/{self.arm}>"

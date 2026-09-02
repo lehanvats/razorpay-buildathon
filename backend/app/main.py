@@ -12,7 +12,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import cases, webhooks
+from app.api.routes import cases, dashboard, demo, escalations, webhooks
 from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +45,9 @@ def create_app() -> FastAPI:
 
     app.include_router(webhooks.router)
     app.include_router(cases.router)
-    # TODO(step-08): dashboard, escalations, demo routers.
+    app.include_router(dashboard.router)
+    app.include_router(escalations.router)
+    app.include_router(demo.router)
 
     @app.get("/health", tags=["ops"])
     def health() -> dict[str, str]:

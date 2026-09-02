@@ -3,11 +3,18 @@
 Kept separate from the ORM models so the API shape can stay stable while the
 schema moves, and separate from proposal.py so the LLM contract is never
 accidentally widened by a UI need.
+
+Every model here aliases to camelCase on the wire (`order_id` ->
+`orderId`) via `CamelModel`, matching `frontend/src/api/types.ts`'s naming —
+`populate_by_name=True` means the rest of the backend keeps constructing
+these with plain snake_case kwargs (`CaseSummary(order_id=...)`), only JSON
+serialization changes.
 """
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 from app.core.audit import Actor, EventType
 from app.core.holdout import Arm
@@ -15,7 +22,11 @@ from app.core.taxonomy import FailureClass
 from app.schemas.proposal import Decision
 
 
-class CaseSummary(BaseModel):
+class CamelModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class CaseSummary(CamelModel):
     """One row in the cases table view."""
 
     id: str
@@ -30,7 +41,7 @@ class CaseSummary(BaseModel):
     recovered_amount_paise: int | None = None
 
 
-class TimelineEntry(BaseModel):
+class TimelineEntry(CamelModel):
     """One audit event, rendered as a row on the case detail timeline."""
 
     ts: datetime
@@ -51,7 +62,7 @@ class CaseDetail(CaseSummary):
     timeline: list[TimelineEntry]
 
 
-class FunnelCounts(BaseModel):
+class FunnelCounts(CamelModel):
     """failed -> eligible -> treated -> recovered."""
 
     failed: int
@@ -60,7 +71,7 @@ class FunnelCounts(BaseModel):
     recovered: int
 
 
-class ArmMetrics(BaseModel):
+class ArmMetrics(CamelModel):
     """Per-arm outcome counts. The control arm is the whole point."""
 
     arm: Arm
@@ -70,7 +81,7 @@ class ArmMetrics(BaseModel):
     recovery_rate: float
 
 
-class DashboardMetrics(BaseModel):
+class DashboardMetrics(CamelModel):
     """The headline screen: gross vs incremental, side by side.
 
     `gross_recovered_paise` is what every vendor in this market reports.
@@ -87,7 +98,7 @@ class DashboardMetrics(BaseModel):
     escalations_open: int
 
 
-class EscalationItem(BaseModel):
+class EscalationItem(CamelModel):
     """A case awaiting human review, with the reason it stopped."""
 
     case: CaseSummary
@@ -97,7 +108,15 @@ class EscalationItem(BaseModel):
     escalated_at: datetime
 
 
-class SeedRequest(BaseModel):
+class EscalationResolution(CamelModel):
+    """Body of `POST /api/escalations/{id}/resolve`. The note is the only
+    thing this endpoint records — see that route's docstring for why it does
+    not resume the agent."""
+
+    note: str = Field(min_length=1)
+
+
+class SeedRequest(CamelModel):
     """Kick off the demo batch."""
 
     count: int = Field(default=100, ge=1, le=500)

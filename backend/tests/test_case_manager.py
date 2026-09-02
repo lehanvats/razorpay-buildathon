@@ -187,7 +187,7 @@ def _treatment_case(db_session, monkeypatch, **event_overrides) -> str:
 
 
 def _stub_diagnose(monkeypatch, proposal: Proposal) -> None:
-    monkeypatch.setattr("app.services.case_manager.diagnose", lambda _context: proposal)
+    monkeypatch.setattr("app.services.case_manager.diagnose", lambda _context, **_kw: proposal)
 
 
 def test_advance_case_refuses_a_control_case(db_session, monkeypatch):
@@ -217,7 +217,7 @@ def test_advance_case_is_a_noop_for_a_terminal_status(db_session, monkeypatch):
 def test_advance_case_escalates_when_diagnosis_fails(db_session, monkeypatch):
     case_id = _treatment_case(db_session, monkeypatch)
 
-    def _raise(_context):
+    def _raise(_context, **_kw):
         raise DiagnosisFailed("model never produced valid JSON")
 
     monkeypatch.setattr("app.services.case_manager.diagnose", _raise)
@@ -538,7 +538,7 @@ def test_advance_case_writes_llm_proposed_on_a_successful_diagnosis(db_session, 
 def test_advance_case_writes_llm_rejected_when_diagnosis_fails(db_session, monkeypatch):
     case_id = _treatment_case(db_session, monkeypatch)
 
-    def _raise(_context):
+    def _raise(_context, **_kw):
         raise DiagnosisFailed("both providers unavailable")
 
     monkeypatch.setattr("app.services.case_manager.diagnose", _raise)

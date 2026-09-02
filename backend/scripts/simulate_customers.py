@@ -3,8 +3,9 @@
     python -m scripts.simulate_customers --seed 42
 
 Per-class payment probabilities drive the whole demo, so they must be stated
-explicitly in the README. Two properties the simulation must have or the
-headline number is meaningless:
+explicitly in the README — see `app.services.simulation.
+PAYMENT_PROBABILITIES` for the exact numbers this run uses. Two properties
+the simulation must have or the headline number is meaningless:
 
   1. **Control cases self-recover too.** Roughly 21% of failed payments
      recover with no outreach at all. If the simulator only pays treated
@@ -24,13 +25,34 @@ Suggested starting probabilities (tune, then document the final numbers):
     SOFT_TECHNICAL   0.25                 0.50                0.35
     DROPOFF          0.20                 0.45                -
     HARD_DECLINE     0.02                 0.02                -   (never treated)
+
+Runs directly against DATABASE_URL rather than over HTTP: deciding who pays
+needs to read case/action state (arm, class, scheduled_for) that there is no
+list-and-filter-by-internal-fields API for, and firing the resulting
+`payment.captured` still goes through the exact same `handle_payment_succeeded`
+path a real webhook would use — see `app.services.simulation`.
 """
+
+import argparse
+
+from app.db.session import SessionLocal
+from app.services.simulation import simulate_customers
 
 
 def main() -> None:
     """Walk open cases and decide, per the probabilities above, whether the
-    customer pays — firing the corresponding Razorpay webhook if so."""
-    raise NotImplementedError("step-08: customer simulator")
+    customer pays — firing the corresponding webhook path if so."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seed", type=int, default=None)
+    args = parser.parse_args()
+
+    session = SessionLocal()
+    try:
+        result = simulate_customers(session, seed=args.seed)
+    finally:
+        session.close()
+
+    print(f"considered {result['considered']} open cases; {result['paid']} paid")
 
 
 if __name__ == "__main__":

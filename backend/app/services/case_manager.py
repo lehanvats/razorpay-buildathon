@@ -37,6 +37,7 @@ from app.policy.snapshot import CaseSnapshot
 from app.scheduler.poller import SchedulingFailed
 from app.scheduler.poller import cancel as cancel_scheduled_action
 from app.scheduler.poller import schedule as schedule_action
+from app.schemas.api import CaseSummary
 from app.schemas.proposal import ActionKind, Decision
 
 #: Once a case reaches one of these, advance_case is a no-op — re-entrant
@@ -251,7 +252,7 @@ def advance_case(session: Any, case_id: str) -> None:
     now = datetime.now(UTC)
 
     try:
-        proposal = diagnose(_build_case_context(case, now=now))
+        proposal = diagnose(_build_case_context(case, now=now), loose_prompt=case.demo_loose_prompt)
     except DiagnosisFailed as exc:
         # LLM_PROPOSED/LLM_REJECTED are recorded here, not inside diagnose()
         # itself: diagnose() takes no `session` on purpose (see its own
@@ -503,6 +504,28 @@ def escalate(session: Any, case_id: str, *, rule_id: str, reason: str) -> None:
     )
 
     session.flush()
+
+
+def build_case_summary(session: Any, case: Case) -> CaseSummary:
+    """CaseSummary for one case, including its recovered amount if any.
+
+    Shared by `api/routes/cases.py` (list + as the base of the detail view)
+    and `api/routes/escalations.py`'s queue — the one place that knows how
+    to join a case to its outcome, so the two routes cannot drift on it.
+    """
+    outcome = session.get(Outcome, case.id)
+    return CaseSummary(
+        id=case.id,
+        order_id=case.razorpay_order_id,
+        amount_paise=case.amount_paise,
+        method=case.method,
+        failure_class=case.failure_class,
+        arm=case.arm,
+        status=case.status,
+        attempts_used=case.attempts_used,
+        created_at=case.created_at,
+        recovered_amount_paise=outcome.recovered_amount_paise if outcome else None,
+    )
 
 
 def get_timeline(session: Any, case_id: str) -> list[dict]:

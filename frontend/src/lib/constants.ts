@@ -4,7 +4,7 @@
 // backend/app/policy/rules.py and must never be duplicated here — a
 // compliance constant with two homes will eventually disagree with itself.
 
-import type { FailureClass, Decision } from '@/api/types'
+import type { FailureClass, Decision, Arm } from '@/api/types'
 
 export const FAILURE_CLASS_LABEL: Record<FailureClass, string> = {
   HARD_DECLINE: 'Hard decline',
@@ -27,4 +27,17 @@ export const DECISION_LABEL: Record<Decision, string> = {
   ESCALATE: 'Escalated to human',
 }
 
-// TODO(step-08): colour tokens, light and dark.
+// Colour tokens are CSS custom-property names (see styles/index.css), not
+// literal colour values — the light/dark swap happens in CSS, this module
+// just says which token a given decision/class means.
+export const DECISION_COLOR_VAR: Record<Decision, string> = {
+  APPROVE: '--accent',
+  REWRITE: '--accent',
+  BLOCK: '--danger',
+  ESCALATE: '--warn',
+}
+
+export const ARM_LABEL: Record<Arm, string> = {
+  treatment: 'Treatment',
+  control: 'Control (held out)',
+}

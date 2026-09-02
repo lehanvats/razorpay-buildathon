@@ -12,26 +12,43 @@ assumed per-class payment probabilities. A judged demo that names its
 simulation beats one that hides it.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/api/demo", tags=["demo"])
+from app.api.deps import get_db, require_demo_mode
+from app.db.models import Action, AuditEvent, Case, Outcome, WebhookEvent
+from app.schemas.api import SeedRequest
+from app.services.seeding import seed_batch
+from app.services.simulation import simulate_customers
 
-
-# @router.post("/seed")
-# def seed(req: SeedRequest, db=Depends(get_db)):
-#     """Generate mixed-class failures through Razorpay test mode.
-#
-#     Must include at least one HARD_DECLINE case run with the loose prompt,
-#     so the gate is seen blocking a retry with rule_id HARD_DECLINE_BLOCK.
-#     That is the 3:00 beat of the demo video."""
-#     raise NotImplementedError("step-08: batch seeder")
+router = APIRouter(prefix="/api/demo", tags=["demo"], dependencies=[Depends(require_demo_mode)])
 
 
-# @router.post("/simulate")
-# def simulate(db=Depends(get_db)):
-#     raise NotImplementedError("step-08: customer simulator")
+@router.post("/seed")
+def seed(req: SeedRequest, db: Session = Depends(get_db)) -> dict:
+    """Generate mixed-class failures in-process (see services.seeding for
+    why this doesn't go over HTTP the way scripts/seed_failures.py does).
+
+    Always includes at least one HARD_DECLINE case run with the loose
+    prompt, so the gate is seen blocking a retry with rule_id
+    HARD_DECLINE_BLOCK. That is the 3:00 beat of the demo video."""
+    return seed_batch(db, count=req.count, seed=req.seed)
 
 
-# @router.post("/reset")
-# def reset(db=Depends(get_db)):
-#     raise NotImplementedError("step-08: demo reset")
+@router.post("/simulate")
+def simulate(db: Session = Depends(get_db)) -> dict:
+    return simulate_customers(db)
+
+
+@router.post("/reset")
+def reset(db: Session = Depends(get_db)) -> dict:
+    """Clear every case-related table so a demo can be re-run from zero.
+
+    Deletion order respects the FK graph (events/outcomes/actions before the
+    cases they reference); `webhook_events` has no FK to anything else so it
+    can go last."""
+    for model in (AuditEvent, Outcome, Action, Case, WebhookEvent):
+        db.execute(delete(model))
+    db.commit()
+    return {"status": "reset"}

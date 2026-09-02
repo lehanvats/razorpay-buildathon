@@ -46,6 +46,7 @@ class EventType(StrEnum):
     ACTION_FAILED = "action_failed"
     ESCALATED = "escalated"
     RECOVERED = "recovered"
+    ESCALATION_RESOLVED = "escalation_resolved"  # actor HUMAN; payload carries note
 
 
 def record(

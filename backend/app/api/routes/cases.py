@@ -8,30 +8,42 @@ The detail endpoint is the explainability view judges read: webhook received
 verbatim) -> policy approved via salary window -> notice sent -> retry
 executed -> recovered Rs 1,499.
 
-Only the detail route is implemented here (step-07's scope — the audit
-trail). The list route stays commented, `TODO(step-08)`: it needs the
-dashboard's filtering conventions decided alongside it, and the frontend has
-nowhere to call it from yet either (`api/client.ts`'s fetch wrapper,
-`App.tsx`'s routing and `CasesPage.tsx` are all still stubs tagged
-step-08) — see corrections.md for the same judgment call made about
-CaseTimeline.tsx/CaseDetailPage.tsx.
+The list route is newest-first with no default filter — the frontend's
+CasesPage applies arm/status/failure_class as query params only when the
+operator picks one.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Case, Outcome
+from app.core.holdout import Arm
+from app.core.taxonomy import FailureClass
+from app.db.models import Case
 from app.db.session import get_db
-from app.schemas.api import CaseDetail
-from app.services.case_manager import get_timeline
+from app.schemas.api import CaseDetail, CaseSummary
+from app.services.case_manager import build_case_summary, get_timeline
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
 
-# @router.get("", response_model=list[CaseSummary])
-# def list_cases(arm=None, status=None, failure_class=None, db=Depends(get_db)):
-#     raise NotImplementedError("step-08: case list")
+@router.get("", response_model=list[CaseSummary])
+def list_cases(
+    arm: Arm | None = None,
+    status: str | None = None,
+    failure_class: FailureClass | None = None,
+    db: Session = Depends(get_db),
+) -> list[CaseSummary]:
+    query = select(Case).order_by(Case.created_at.desc())
+    if arm is not None:
+        query = query.where(Case.arm == arm.value)
+    if status is not None:
+        query = query.where(Case.status == status)
+    if failure_class is not None:
+        query = query.where(Case.failure_class == failure_class.value)
+
+    cases = db.execute(query).scalars()
+    return [build_case_summary(db, case) for case in cases]
 
 
 @router.get("/{case_id}", response_model=CaseDetail)
@@ -42,18 +54,5 @@ def get_case(case_id: str, db: Session = Depends(get_db)) -> CaseDetail:
     if case is None:
         raise HTTPException(status_code=404, detail="case not found")
 
-    outcome = db.execute(select(Outcome).where(Outcome.case_id == case_id)).scalar_one_or_none()
-
-    return CaseDetail(
-        id=case.id,
-        order_id=case.razorpay_order_id,
-        amount_paise=case.amount_paise,
-        method=case.method,
-        failure_class=case.failure_class,
-        arm=case.arm,
-        status=case.status,
-        attempts_used=case.attempts_used,
-        created_at=case.created_at,
-        recovered_amount_paise=outcome.recovered_amount_paise if outcome else None,
-        timeline=get_timeline(db, case_id),
-    )
+    summary = build_case_summary(db, case)
+    return CaseDetail(**summary.model_dump(), timeline=get_timeline(db, case_id))
