@@ -2,11 +2,11 @@
 
 diagnose() takes explicit `provider`/`fallback_provider` arguments precisely
 so these tests can hand it stub implementations of the LLMProvider protocol
-instead of hitting Anthropic or Gemini. That is also why these tests are the
-only proof step-04 has today: there is no API key configured on this
-machine (see corrections.md) and neither `anthropic` nor `google-genai` is
-installed in the venv, so a real model has never actually filled this
-schema — only the parse/retry/fallback plumbing around it is verified here.
+instead of hitting Groq, Anthropic, or Gemini. What's verified here is the
+parse/retry/fallback plumbing around a provider, not any specific model's
+output — that a real model reliably fills the schema was confirmed
+separately, live against Groq and Gemini (see corrections.md, entry 9).
+`anthropic` remains uninstalled/unverified, as it is not the default.
 """
 
 import pytest
