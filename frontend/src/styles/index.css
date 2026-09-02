@@ -1,79 +1,243 @@
 /* Global styles and design tokens.
  *
+ * Visual language: Swiss / minimalist — grid-based, high contrast, generous
+ * type hierarchy, no ornament. The product is a compliance argument, so the
+ * UI should read like a well-set financial document, not a marketing page.
+ *
  * Define the full light palette on :root, then redefine only the tokens
  * under a dark media query — so a colour never has its single definition
  * inside a conditional block.
  *
  * Money is the visual hierarchy: the two recovery counters are the largest
  * type on the dashboard, and incremental gets the same weight as gross.
+ *
+ * Semantic colour triples. Every accent token comes as a set of three, and
+ * they must stay a set:
+ *
+ *   --x        the saturated colour   — bars, rules, borders, icons
+ *   --x-weak   a tinted background    — badge and callout fills
+ *   --x-ink    text sitting on -weak  — contrast-checked against it
+ *
+ * `PolicyVerdictBadge` builds these names by string concatenation at runtime
+ * (`var(${colorVar}-weak)`), so a renamed or half-defined triple fails
+ * silently — it type-checks, builds, and then renders an invisible badge.
+ * Add or rename all three together, or not at all.
  */
 
-:root {
-  --bg: #f6f7f5;
-  --surface: #ffffff;
-  --ink: #14171a;
-  --muted: #5b6572;
-  --line: #e2e5e8;
-  --accent: #1a7f4e; /* recovered / approved */
-  --accent-weak: #e5f3ec;
-  --warn: #a8631a; /* escalated */
-  --warn-weak: #fbeee0;
-  --danger: #b0332b; /* blocked */
-  --danger-weak: #fbe9e7;
-  --control: #5b6cff; /* the holdout arm's own accent, distinct from money colours */
-  --control-weak: #ececff;
+/* --------------------------------------------------------------- tokens */
 
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+:root {
+  /* Surfaces. --surface-2 is the recessed tone: table headers, insets,
+   * the sidebar — anything that should sit behind --surface. */
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --surface-2: #eef1f3;
+  --ink: #10151b;
+  --ink-soft: #37424e;
+  --muted: #5a6672;
+  --line: #e0e5e9;
+  --line-strong: #c6ced6;
+
+  /* recovered / approved — the money colour */
+  --accent: #0f7a4a;
+  --accent-weak: #e4f3eb;
+  --accent-ink: #0a5b37;
+  /* Text on a *filled* --accent surface. Which end of the green ramp is
+   * legible flips between schemes — white on the light theme's deep green,
+   * near-black on the dark theme's mint — so this is a token rather than a
+   * literal, and .btn-primary needs no per-scheme override. */
+  --on-accent: #ffffff;
+
+  /* escalated — needs a human */
+  --warn: #9a5b0d;
+  --warn-weak: #fbeedc;
+  --warn-ink: #7a4809;
+
+  /* blocked by policy */
+  --danger: #b3312a;
+  --danger-weak: #fbe9e7;
+  --danger-ink: #8d251f;
+
+  /* the holdout arm's own accent, deliberately not a money colour */
+  --control: #4a56cf;
+  --control-weak: #eaecfc;
+  --control-ink: #3641a8;
+
+  /* Type. IBM Plex reads as financial/institutional and ships a mono that
+   * is metrically at home beside the sans — order ids, rule ids and paise
+   * all live in the mono, so the two faces sit adjacent constantly. */
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.5rem;
+
+  /* Dense dashboard scale — this is an operator console, not a landing
+   * page, so the steps are tight and the rhythm is 4px. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  --radius-sm: 6px;
   --radius: 10px;
+  --radius-lg: 14px;
+
+  /* Swiss style takes its depth from rules and tone, not soft shadows.
+   * These are deliberately tight and low-opacity. */
+  --shadow-sm: 0 1px 2px rgb(16 21 27 / 0.05);
+  --shadow: 0 1px 3px rgb(16 21 27 / 0.07), 0 1px 2px rgb(16 21 27 / 0.04);
+
+  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--control);
+  --transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1113;
-    --surface: #17191c;
-    --ink: #eef0f2;
-    --muted: #9aa4b0;
-    --line: #2a2e33;
+    --bg: #0d1013;
+    --surface: #161a1e;
+    --surface-2: #1d2228;
+    --ink: #e9edf0;
+    --ink-soft: #c2cad2;
+    --muted: #929daa;
+    --line: #252b32;
+    --line-strong: #39424c;
+
     --accent: #3ecb87;
-    --accent-weak: #113722;
+    --accent-weak: #0e3524;
+    --accent-ink: #63dba1;
+    --on-accent: #08130d;
+
     --warn: #e0a24a;
     --warn-weak: #3a2a10;
+    --warn-ink: #edb96d;
+
     --danger: #f0685f;
     --danger-weak: #3a1613;
+    --danger-ink: #ff8b81;
+
     --control: #8b96ff;
-    --control-weak: #1c1e3a;
+    --control-weak: #1e2247;
+    --control-ink: #a7afff;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
   }
 }
 
+/* ---------------------------------------------------------------- base */
+
 * {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
   color: inherit;
 }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.011em;
 }
+
+/* Tabular figures everywhere a number can change under the reader: the
+ * dashboard polls every 4s, and proportional digits make the counters
+ * jitter sideways on each tick. */
+.mono,
+table,
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Anything that moves does so because motion carries meaning (a bar
+ * growing, a counter climbing). Honour the OS setting and show the end
+ * state immediately. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:where(a, button, select, input, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------------------ primitives */
 
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 1.25rem;
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Section label inside a card — the small caps rule that gives the Swiss
+ * grid its horizontal structure. */
+.card-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.page-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 .muted {
   color: var(--muted);
+}
+
+/* Available to assistive tech, invisible on screen. Used to give a numeric
+ * badge a full sentence to announce without printing it beside the digit. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .mono {
@@ -81,37 +245,781 @@ table {
 }
 
 .badge {
+  /* Establishes the containing block for any .sr-only text inside. Without
+   * it the absolutely-positioned span resolves against a distant ancestor,
+   * escapes the badge, and stretches the document. */
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
+  gap: var(--space-1);
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
   font-weight: 600;
+  line-height: 1.6;
   white-space: nowrap;
+  letter-spacing: 0.01em;
 }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* --------------------------------------------------------------- controls */
 
 .btn {
   font: inherit;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  font-size: var(--text-base);
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
+  background: var(--surface-2);
   border-color: var(--muted);
 }
 
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
 }
 
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.input {
+  font: inherit;
+  font-size: var(--text-base);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  transition: border-color var(--transition);
+}
+
+.input:hover {
+  border-color: var(--muted);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+/* Native select keeps its own chevron and click target; this only aligns it
+ * with .input's metrics so a filter row reads as one control group. */
+.select {
+  font: inherit;
+  font-size: var(--text-base);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.select:hover {
+  border-color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* The sidebar sits on --surface-2 so the content column reads as the lit
+ * surface and the chrome recedes. Sticky, not fixed: it keeps its place in
+ * flow, so the content column needs no compensating margin. */
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  width: 232px;
+  flex-shrink: 0;
+  height: 100vh;
+  background: var(--surface-2);
+  border-right: 1px solid var(--line);
+  padding: var(--space-5) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.brand-mark {
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-sub {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0.45rem var(--space-3);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 500;
+  /* 44px minimum touch target — the sidebar becomes a real tap target on
+   * the narrow layout, where these are the only navigation controls. */
+  min-height: 40px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.nav-item:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* Active state carries two independent signals — weight/colour and a solid
+ * left rule — so it does not rest on colour alone. */
+.nav-item[aria-current='page'] {
+  color: var(--ink);
+  background: var(--surface);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.nav-label {
+  flex: 1;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: var(--space-3);
+  border-top: 1px solid var(--line);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.content {
+  flex: 1;
+  min-width: 0; /* lets wide tables scroll inside instead of stretching the shell */
+  padding: var(--space-8);
+  max-width: 1180px;
+}
+
+/* Below this the sidebar stops being a column and becomes a header strip
+ * with a horizontally scrollable nav — a 232px rail on a 375px screen
+ * leaves no usable content width. */
+@media (max-width: 900px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    /* `relative`, not `static`: the wide layout's `sticky` happens to
+     * establish a containing block, so absolutely-positioned descendants
+     * (the .sr-only badge text, scrolled out of view in this row layout)
+     * are clipped by the overflow. Dropping to `static` here let them
+     * resolve against the page and widen the whole document. */
+    position: relative;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: var(--space-3);
+    overflow-x: auto;
+  }
+
+  .brand {
+    margin-bottom: 0;
+    padding-left: var(--space-1);
+    flex-shrink: 0;
+  }
+
+  .brand-sub,
+  .sidebar-foot {
+    display: none;
+  }
+
+  .nav-item[aria-current='page'] {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  .content {
+    padding: var(--space-5) var(--space-4);
+  }
+}
+
+/* ------------------------------------------------------------ page layout */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.page-sub {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  max-width: 68ch;
+}
+
+/* auto-fit rather than a fixed 1fr 1fr: the counters are the hero and must
+ * not compress into two unreadable columns on a phone. */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: var(--space-4);
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Border-colour variants. Used to tie a card to a semantic: the holdout
+ * panels carry --control, destructive actions carry --danger. */
+.card--control {
+  border-color: var(--control);
+}
+
+.card--danger {
+  border-color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ stats */
+
+.stat-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-note {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ----------------------------------------------------------------- funnel */
+
+.funnel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.funnel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.funnel-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.funnel-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.funnel-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- tooltip */
+
+/* Recharts' default tooltip is a hard-coded white box, which is unreadable
+ * on the dark palette. This is the shared surface for the custom one. */
+.chart-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  box-shadow: var(--shadow);
+  font-size: var(--text-sm);
+}
+
+/* ------------------------------------------------------------------ table */
+
+/* Wide tables scroll inside their own container rather than widening the
+ * page — the shell must never scroll horizontally. */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.data-table {
+  font-size: var(--text-base);
+  min-width: 780px;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.data-table tbody td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A held-out case is marked by a --control rule down its leading edge and a
+ * faint tint, NOT by dimming. The old `opacity: 0.7` pushed body text under
+ * the 4.5:1 contrast floor, so the arm most in need of scrutiny was the
+ * hardest to read. */
+.row-control td {
+  background: color-mix(in srgb, var(--control) 5%, transparent);
+}
+
+.row-control td:first-child {
+  box-shadow: inset 2px 0 0 var(--control);
+}
+
+.row-control:hover td {
+  background: color-mix(in srgb, var(--control) 11%, transparent);
+}
+
+.link-id {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 1px;
+}
+
+.link-id:hover {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- filters */
+
+.filter-bar {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Visible, permanent label — not a placeholder option doing double duty as
+ * the field's name. */
+.field-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.result-count {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  padding-bottom: var(--space-2);
+}
+
+/* --------------------------------------------------------------- timeline */
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tl-item {
+  display: grid;
+  grid-template-columns: 150px 26px minmax(0, 1fr);
+  column-gap: var(--space-4);
+  align-items: stretch;
+}
+
+/* The rail cell stretches to the row's full height, so the connecting line
+ * spans however tall the entry's content grows — a verbatim LLM reasoning
+ * paragraph is not clipped to keep the line short. */
+.tl-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tl-rail::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+
+/* The rail is a connector between nodes, not a bracket around them: it
+ * starts at the first node and stops at the last. */
+.tl-item:first-child .tl-rail::before {
+  top: 13px;
+}
+
+.tl-item:last-child .tl-rail::before {
+  bottom: calc(100% - 13px);
+}
+
+.tl-node {
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 2px solid var(--surface);
+  flex-shrink: 0;
+}
+
+.tl-time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  padding-top: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-body {
+  padding-bottom: var(--space-5);
+  padding-top: 2px;
+  min-width: 0;
+}
+
+.tl-item:last-child .tl-body {
+  padding-bottom: 0;
+}
+
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tl-event {
+  font-weight: 600;
+}
+
+.tl-actor {
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Verbatim model reasoning. `pre-wrap` keeps the model's own line breaks;
+ * there is deliberately no max-height, line-clamp or "show more" — the
+ * explainability claim is that you can read exactly what the model said. */
+.tl-reasoning {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  border-left: 2px solid var(--line);
+  padding-left: var(--space-3);
+}
+
+@media (max-width: 700px) {
+  .tl-item {
+    grid-template-columns: 26px minmax(0, 1fr);
+    column-gap: var(--space-3);
+  }
+
+  /* The timestamp moves under the event rather than holding a 150px column
+   * that would leave nothing for the content on a phone. */
+  .tl-time {
+    grid-column: 2;
+    grid-row: 2;
+    padding-top: 0;
+    padding-bottom: var(--space-2);
+  }
+
+  .tl-rail {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .tl-body {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+/* ----------------------------------------------------------- detail facts */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: var(--space-4);
+}
+
+.fact-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  width: fit-content;
+}
+
+.back-link:hover {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- notices */
+
+/* A standing explanation, not an alert — it states how a control behaves
+ * before the reader uses it. The left rule carries the tone. */
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.notice--control {
+  border-left-color: var(--control);
+}
+
+/* Small key/value chips summarising a queue by rule. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+}
+
+.chip-count {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------- resolve form */
+
+.resolve-form {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.resolve-form .field {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* ------------------------------------------------------------- demo steps */
+
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.controls-row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+/* A borderless companion table for stated assumptions — it sits inside a
+ * card that already has a border, so it only needs row rules. */
+.mini-table {
+  font-size: var(--text-sm);
+  width: auto;
+}
+
+.mini-table th {
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: var(--space-2) var(--space-5) var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.mini-table td {
+  padding: var(--space-2) var(--space-5) var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.mini-table tr:last-child td {
+  border-bottom: none;
+}
+
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-weak);
+  border-color: var(--danger);
+}
+
+/* Result readout after a demo action fires. */
+.readout {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+  overflow-wrap: anywhere;
 }

@@ -3,6 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Recoup — payment-failure recovery for Indian payment rails. The LLM proposes, a policy engine disposes, and a built-in holdout proves the recovery is real."
+    />
+    <!-- Follows the palette's --bg in each scheme so the browser chrome does
+         not flash the opposite theme before first paint. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6f7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1013" />
+
+    <!-- IBM Plex Sans + Mono. Preconnect to both hosts: the CSS comes from
+         googleapis, the font files from gstatic, and without the second hint
+         the font fetch pays a fresh connection setup. `display=swap` (and the
+         system fallback stack in styles/index.css) means text is readable on
+         first paint rather than invisible — a FOIT on a projector during a
+         judged demo is worse than a FOUT. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+    />
+
     <title>Recoup — payment recovery</title>
   </head>
   <body>
