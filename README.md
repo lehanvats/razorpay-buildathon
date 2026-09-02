@@ -172,7 +172,7 @@ would quietly reintroduce exactly the dishonesty the holdout exists to prevent.
 | API + webhooks | FastAPI (Python 3.12) |
 | Database | Postgres (Neon) + SQLAlchemy + Alembic |
 | Durable steps | `actions.scheduled_for` + claiming poller (`FOR UPDATE SKIP LOCKED`) |
-| LLM | Claude (primary) · Gemini Flash (zero-cost fallback) |
+| LLM | Groq openai/gpt-oss-120b (primary) · Gemini Flash (zero-cost fallback) |
 | Email | Resend (100/day free) |
 | Payments | Razorpay **test mode**: Orders, Payment Links, webhooks |
 | Frontend | React 18 + TypeScript + Vite |
