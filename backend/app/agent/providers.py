@@ -79,6 +79,9 @@ class GroqProvider:
         except groq.APIError as exc:
             raise LLMUnavailable(f"Groq request failed: {exc}") from exc
 
+        if not response.choices:
+            raise LLMUnavailable("Groq returned no choices")
+
         return response.choices[0].message.content or ""
 
 
