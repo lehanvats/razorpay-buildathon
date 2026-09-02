@@ -1209,6 +1209,24 @@ table {
   border-left-color: var(--control);
 }
 
+/* The cause-first summary above the triage list: which rule stopped how
+ * many cases. Given more visual weight than a chip buried in a card used
+ * to carry, since this is the thing an operator reads first. */
+.rule-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.rule-summary-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* Small key/value chips summarising a queue by rule. */
 .chip-row {
   display: flex;
@@ -1220,17 +1238,64 @@ table {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0.2rem 0.55rem;
-  border: 1px solid var(--line);
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
 }
 
 .chip-count {
   font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
+}
+
+/* --------------------------------------------------------------- triage */
+
+/* One row per escalated case — dense, not a fat card, so a queue in the
+ * dozens reads as a scannable list rather than a stack of full-width
+ * panels. The rule-level story lives in .rule-summary above; each row
+ * only needs to carry what's specific to that one case. */
+.triage-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.triage-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.triage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Pushes the verdict badge to the row's far right while id + meta stay
+ * clustered on the left — same left/right split .row-between gives a
+ * two-child row, done with an auto margin since this row has three. */
+.triage-meta {
+  font-size: var(--text-xs);
+  margin-right: auto;
+}
+
+.triage-reason {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.triage-action {
+  margin-top: var(--space-1);
 }
 
 /* --------------------------------------------------------- resolve form */
