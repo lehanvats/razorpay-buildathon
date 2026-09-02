@@ -16,10 +16,15 @@
 //  2. Never filter or reorder events. A redacted audit trail is not an audit
 //     trail. `entries` is rendered in the order the API sends it — already
 //     ordered (ts, id) ascending by services/case_manager.get_timeline.
+//
+// The rail is presentation only. Every entry the API sends gets a node,
+// including ones with no icon or tone of their own.
 
 import type { EventType, TimelineEntry } from '@/api/types'
+import { IconBlock, IconCheck, IconClock, IconEscalation } from '@/components/icons'
 import { PolicyVerdictBadge } from '@/components/cases/PolicyVerdictBadge'
-import { formatIST } from '@/lib/format'
+import type { Tone } from '@/lib/constants'
+import { formatIST, formatPaise } from '@/lib/format'
 
 const EVENT_LABEL: Record<EventType, string> = {
   webhook_received: 'Webhook received',
@@ -39,6 +44,36 @@ const EVENT_LABEL: Record<EventType, string> = {
   escalation_resolved: 'Escalation resolved',
 }
 
+/** Tone per event. Anything not listed stays neutral — a new backend event
+ * renders as a plain node rather than disappearing. */
+const EVENT_TONE: Partial<Record<EventType, Tone>> = {
+  policy_approved: 'accent',
+  action_completed: 'accent',
+  recovered: 'accent',
+  policy_blocked: 'danger',
+  llm_rejected: 'danger',
+  action_failed: 'danger',
+  escalated: 'warn',
+  escalation_resolved: 'warn',
+  action_scheduled: 'control',
+}
+
+const EVENT_ICON: Partial<Record<EventType, () => JSX.Element>> = {
+  policy_approved: () => <IconCheck size={13} />,
+  action_completed: () => <IconCheck size={13} />,
+  recovered: () => <IconCheck size={13} />,
+  policy_blocked: () => <IconBlock size={13} />,
+  llm_rejected: () => <IconBlock size={13} />,
+  action_failed: () => <IconBlock size={13} />,
+  escalated: () => <IconEscalation size={13} />,
+  action_scheduled: () => <IconClock size={13} />,
+}
+
+function nodeStyle(tone: Tone | undefined): React.CSSProperties {
+  if (!tone || tone === 'neutral') return {}
+  return { background: `var(--${tone}-weak)`, color: `var(--${tone}-ink)` }
+}
+
 function EntryDetail({ entry }: { entry: TimelineEntry }) {
   const { eventType, payload, ruleId } = entry
 
@@ -53,27 +88,31 @@ function EntryDetail({ entry }: { entry: TimelineEntry }) {
       <>
         <PolicyVerdictBadge decision="ESCALATE" ruleId={ruleId} />
         {typeof payload.reason === 'string' && (
-          <p style={{ margin: '0.4rem 0 0' }}>{payload.reason}</p>
+          <p className="tl-reasoning">{payload.reason}</p>
         )}
       </>
     )
   }
   if (eventType === 'llm_proposed' && typeof payload.reasoning === 'string') {
     // Rule 1: verbatim, never truncated.
-    return <p style={{ margin: '0.4rem 0 0', whiteSpace: 'pre-wrap' }}>{payload.reasoning}</p>
+    return <p className="tl-reasoning">{payload.reasoning}</p>
   }
   if (eventType === 'llm_rejected' && typeof payload.error === 'string') {
     return (
-      <p style={{ margin: '0.4rem 0 0', color: 'var(--danger)' }} className="mono">
+      <p className="tl-reasoning mono" style={{ color: 'var(--danger)' }}>
         {payload.error}
       </p>
     )
   }
   if (eventType === 'recovered' && typeof payload.amount_paise === 'number') {
-    return <p style={{ margin: '0.4rem 0 0' }}>Rs {(payload.amount_paise / 100).toLocaleString('en-IN')}</p>
+    return (
+      <p style={{ margin: 'var(--space-1) 0 0', color: 'var(--accent)', fontWeight: 600 }}>
+        {formatPaise(payload.amount_paise)}
+      </p>
+    )
   }
   if (eventType === 'escalation_resolved' && typeof payload.note === 'string') {
-    return <p style={{ margin: '0.4rem 0 0' }}>{payload.note}</p>
+    return <p className="tl-reasoning">{payload.note}</p>
   }
   return null
 }
@@ -84,30 +123,44 @@ export function CaseTimeline({ entries }: { entries: TimelineEntry[] }) {
   }
 
   return (
-    <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-      {entries.map((entry, i) => (
-        <li
-          key={`${entry.ts}-${i}`}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '160px 90px 1fr',
-            gap: '0.75rem',
-            padding: '0.6rem 0',
-            borderBottom: i < entries.length - 1 ? '1px solid var(--line)' : undefined,
-          }}
-        >
-          <span className="muted mono" style={{ fontSize: '0.8rem' }}>
-            {formatIST(entry.ts)}
-          </span>
-          <span className="muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase' }}>
-            {entry.actor}
-          </span>
-          <div>
-            <div style={{ fontWeight: 600 }}>{EVENT_LABEL[entry.eventType]}</div>
-            <EntryDetail entry={entry} />
-          </div>
-        </li>
-      ))}
+    <ol className="timeline">
+      {entries.map((entry, i) => {
+        const tone = EVENT_TONE[entry.eventType]
+        const Icon = EVENT_ICON[entry.eventType]
+        return (
+          <li key={`${entry.ts}-${i}`} className="tl-item">
+            <time className="tl-time" dateTime={entry.ts}>
+              {formatIST(entry.ts)}
+            </time>
+            <div className="tl-rail">
+              <span className="tl-node" style={nodeStyle(tone)}>
+                {/* Events with no tone of their own get a plain mark, in the
+                  * node's inherited colour — not the sidebar's accent .dot. */}
+                {Icon ? (
+                  <Icon />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: 'currentColor',
+                    }}
+                  />
+                )}
+              </span>
+            </div>
+            <div className="tl-body">
+              <div className="tl-head">
+                <span className="tl-event">{EVENT_LABEL[entry.eventType]}</span>
+                <span className="tl-actor">{entry.actor}</span>
+              </div>
+              <EntryDetail entry={entry} />
+            </div>
+          </li>
+        )
+      })}
     </ol>
   )
 }
