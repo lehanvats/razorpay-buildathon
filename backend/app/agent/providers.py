@@ -70,6 +70,13 @@ def _require_api_key(value: str, env_name: str) -> str:
     return value
 
 
+_MAX_TOKENS = 1024
+"""Shared response budget for providers whose SDK takes one. Kept in one
+place because Groq's truncation guard below exists precisely because this
+number can run out before any visible content is emitted — a bump here is
+the fix, not a per-provider literal."""
+
+
 class GroqProvider:
     """Primary. openai/gpt-oss-120b via Groq's OpenAI-compatible chat API.
 
@@ -92,7 +99,7 @@ class GroqProvider:
         try:
             response = client.chat.completions.create(
                 model=settings.groq_model,
-                max_tokens=1024,
+                max_tokens=_MAX_TOKENS,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -143,7 +150,7 @@ class AnthropicProvider:
         try:
             response = client.messages.create(
                 model=settings.anthropic_model,
-                max_tokens=1024,
+                max_tokens=_MAX_TOKENS,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
