@@ -861,6 +861,47 @@ table {
   color: var(--accent);
 }
 
+/* ------------------------------------------------------------- cases layout */
+
+/* Single column below 1100px — a list pane and a detail pane both need real
+ * width to be usable, and there isn't room for both below that. See
+ * CasesPage.tsx for how `--collapsed` is decided. */
+.cases-layout {
+  display: block;
+}
+
+@media (min-width: 1100px) {
+  .cases-layout {
+    display: grid;
+    grid-template-columns: minmax(360px, 440px) 1fr;
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .cases-list-pane {
+    /* Stays in view while a long case list scrolls the detail pane's
+     * content past it — same reasoning as the shell's own sticky sidebar,
+     * pinned just below the app bar. */
+    position: sticky;
+    top: 56px;
+  }
+}
+
+@media (max-width: 1099px) {
+  .cases-list-pane--collapsed,
+  .cases-detail-pane--collapsed {
+    display: none;
+  }
+}
+
+.cases-empty-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  text-align: center;
+}
+
 /* ---------------------------------------------------------------- filters */
 
 .filter-bar {
