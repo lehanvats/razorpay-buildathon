@@ -409,21 +409,73 @@ table {
 
 /* ------------------------------------------------------------------ shell */
 
+/* Two-tier chrome: a 56px app bar spans both columns, a nav rail sits below
+ * it beside the content column. A CSS grid, not nested flex — the app bar
+ * needs to span the full width while the rail and content stay side by
+ * side underneath it, which a single flex row cannot express without an
+ * extra wrapper. */
 .shell {
-  display: flex;
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  grid-template-rows: 56px auto;
   min-height: 100vh;
 }
 
-/* The sidebar sits on --surface-2 so the content column reads as the lit
- * surface and the chrome recedes. Sticky, not fixed: it keeps its place in
- * flow, so the content column needs no compensating margin. */
-.sidebar {
+.appbar {
+  grid-column: 1 / -1;
+  /* Sticky, not fixed: it keeps its place in the grid's document flow, so
+   * nothing below needs a compensating margin — same reasoning as the old
+   * sidebar's sticky positioning, just applied one level up. */
   position: sticky;
   top: 0;
-  align-self: flex-start;
-  width: 232px;
-  flex-shrink: 0;
-  height: 100vh;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.brand-mark {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.brand-sub {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+/* The live LLM-pipeline indicator in the app bar. Extends .badge; the dot
+ * reuses .dot with `currentColor` so one element serves both the healthy
+ * (accent) and degraded (danger) palette without a second style block. */
+.pipeline-status {
+  padding: 0.3rem 0.7rem;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* The sidebar sits on --surface-2 so the content column reads as the lit
+ * surface and the chrome recedes. Sticky under the app bar, not fixed: it
+ * keeps its place in flow, so the content column needs no compensating
+ * margin. */
+.sidebar {
+  position: sticky;
+  top: 56px;
+  align-self: start;
+  height: calc(100vh - 56px);
   background: var(--surface-2);
   border-right: 1px solid var(--line);
   padding: var(--space-5) var(--space-3);
@@ -432,24 +484,14 @@ table {
   gap: var(--space-1);
 }
 
-.brand {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+.sidebar-eyebrow {
   padding: 0 var(--space-3);
-  margin-bottom: var(--space-6);
-}
-
-.brand-mark {
-  font-size: var(--text-md);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.brand-sub {
+  margin-bottom: var(--space-2);
   font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
-  letter-spacing: 0.02em;
 }
 
 .nav-item {
@@ -506,7 +548,6 @@ table {
 }
 
 .content {
-  flex: 1;
   min-width: 0; /* lets wide tables scroll inside instead of stretching the shell */
   padding: var(--space-8);
   max-width: 1180px;
@@ -514,20 +555,32 @@ table {
 
 /* Below this the sidebar stops being a column and becomes a header strip
  * with a horizontally scrollable nav — a 232px rail on a 375px screen
- * leaves no usable content width. */
+ * leaves no usable content width. The app bar stays a full-width row at
+ * every size; only the grid's second row (rail + content) collapses. */
 @media (max-width: 900px) {
   .shell {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    grid-template-rows: 56px auto auto;
+  }
+
+  .appbar {
+    padding: 0 var(--space-4);
+  }
+
+  .brand-sub {
+    display: none;
   }
 
   .sidebar {
-    /* `relative`, not `static`: the wide layout's `sticky` happens to
-     * establish a containing block, so absolutely-positioned descendants
-     * (the .sr-only badge text, scrolled out of view in this row layout)
-     * are clipped by the overflow. Dropping to `static` here let them
-     * resolve against the page and widen the whole document. */
+    /* `relative`, not `static`, and no longer `sticky`: the wide layout's
+     * `sticky` happens to establish a containing block, so
+     * absolutely-positioned descendants (the .sr-only badge text, scrolled
+     * out of view in this row layout) are clipped by the overflow.
+     * Dropping to `static` here let them resolve against the page and
+     * widen the whole document — `relative` keeps the clip without the
+     * pinned positioning a horizontal strip doesn't need. */
     position: relative;
-    width: 100%;
+    top: auto;
     height: auto;
     flex-direction: row;
     align-items: center;
@@ -538,13 +591,7 @@ table {
     overflow-x: auto;
   }
 
-  .brand {
-    margin-bottom: 0;
-    padding-left: var(--space-1);
-    flex-shrink: 0;
-  }
-
-  .brand-sub,
+  .sidebar-eyebrow,
   .sidebar-foot {
     display: none;
   }
