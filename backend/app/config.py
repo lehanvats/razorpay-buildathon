@@ -72,7 +72,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3.6-flash"
+    """gemini-2.0-flash was retired by Google; this is its direct
+    replacement (confirmed live against the API, see corrections.md)."""
 
     # --- Email ---
     resend_api_key: str = ""
