@@ -46,9 +46,11 @@ class LLMUnavailable(RuntimeError):
     """
 
 
-def _import_sdk(sdk_label: str, *module_names: str):
+def _import_sdk(sdk_label: str, *module_names: str) -> tuple:
     """Import each of `module_names`, or raise LLMUnavailable naming
-    `sdk_label` if any is missing.
+    `sdk_label` if any is missing. Always returns a tuple, even for one
+    module — callers unpack (`(groq,) = _import_sdk(...)`) so the shape
+    doesn't depend on how many names were passed.
 
     Every provider's SDK is in requirements.txt but not every dev
     environment has it installed, and a module-top import would make this
@@ -57,10 +59,9 @@ def _import_sdk(sdk_label: str, *module_names: str):
     provider imports its SDK lazily, inside complete(), through this helper.
     """
     try:
-        modules = tuple(importlib.import_module(name) for name in module_names)
+        return tuple(importlib.import_module(name) for name in module_names)
     except ImportError as exc:
         raise LLMUnavailable(f"{sdk_label} SDK is not installed") from exc
-    return modules[0] if len(modules) == 1 else modules
 
 
 def _require_api_key(value: str, env_name: str) -> str:
@@ -89,7 +90,7 @@ class GroqProvider:
     """Gemini's free tier is the fallback for this paid-ish primary."""
 
     def complete(self, system: str, user: str) -> str:
-        groq = _import_sdk("groq", "groq")
+        (groq,) = _import_sdk("groq", "groq")
 
         from app.config import settings
 
@@ -140,7 +141,7 @@ class AnthropicProvider:
     """Gemini's free tier is the fallback for this paid-ish primary."""
 
     def complete(self, system: str, user: str) -> str:
-        anthropic = _import_sdk("anthropic", "anthropic")
+        (anthropic,) = _import_sdk("anthropic", "anthropic")
 
         from app.config import settings
 
