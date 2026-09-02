@@ -32,6 +32,28 @@ const PAYMENT_PROBABILITIES = [
   ['Hard decline', '2%', '2%', '— (never treated)'],
 ] as const
 
+function Step({
+  n,
+  title,
+  children,
+  danger,
+}: {
+  n: number
+  title: string
+  children: React.ReactNode
+  danger?: boolean
+}) {
+  return (
+    <section className={`card${danger ? ' card--danger' : ''}`}>
+      <div className="step-head">
+        <span className="step-num">{n}</span>
+        <h2 className="card-title">{title}</h2>
+      </div>
+      {children}
+    </section>
+  )
+}
+
 export default function DemoPage() {
   const [count, setCount] = useState(100)
   const [seed, setSeed] = useState<string>('')
@@ -65,40 +87,51 @@ export default function DemoPage() {
 
   if (disabled) {
     return (
-      <div className="card">
-        <p style={{ margin: 0 }}>
-          Demo controls are disabled on this server (<code>DEMO_MODE=false</code>). This is the
-          correct state for anything pointed at live Razorpay keys.
-        </p>
+      <div className="stack">
+        <header className="page-head">
+          <h1 className="page-title">Demo controls</h1>
+        </header>
+        <div className="notice">
+          Demo controls are disabled on this server (<code className="mono">DEMO_MODE=false</code>
+          ). This is the correct state for anything pointed at live Razorpay keys.
+        </div>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <h1 style={{ fontSize: '1.4rem', margin: 0 }}>Demo controls</h1>
+    <div className="stack">
+      <header className="page-head">
+        <h1 className="page-title">Demo controls</h1>
+        <p className="page-sub">
+          Seed a batch of failed payments, then play the customers paying or not. Customer
+          behaviour is simulated and the assumptions are stated below — naming the simulation
+          beats hiding it.
+        </p>
+      </header>
 
-      <div className="card">
-        <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>1. Seed a batch</div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <label className="muted" style={{ fontSize: '0.85rem' }}>
-            Count
+      <Step n={1} title="Seed a batch">
+        <div className="controls-row">
+          <label className="field">
+            <span className="field-label">Count</span>
             <input
+              className="input"
               type="number"
               min={1}
               max={500}
               value={count}
               onChange={(e) => setCount(Number(e.target.value))}
-              style={{ marginLeft: '0.4rem', width: 80 }}
+              style={{ width: 96 }}
             />
           </label>
-          <label className="muted" style={{ fontSize: '0.85rem' }}>
-            Seed (optional, for a reproducible run)
+          <label className="field">
+            <span className="field-label">Seed (optional)</span>
             <input
+              className="input"
               value={seed}
               onChange={(e) => setSeed(e.target.value)}
               placeholder="42"
-              style={{ marginLeft: '0.4rem', width: 80 }}
+              style={{ width: 96 }}
             />
           </label>
           <button
@@ -106,32 +139,38 @@ export default function DemoPage() {
             onClick={() => seedMutation.mutate()}
             disabled={seedMutation.isPending}
           >
-            Seed
+            {seedMutation.isPending ? 'Seeding…' : 'Seed'}
           </button>
+          <span className="muted" style={{ fontSize: 'var(--text-sm)', paddingBottom: 6 }}>
+            A seed makes the run reproducible.
+          </span>
         </div>
+
         {seedMutation.data && (
-          <p className="muted mono" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
-            seeded {seedMutation.data.count} — by class {JSON.stringify(seedMutation.data.byClass)}
-            , by arm {JSON.stringify(seedMutation.data.byArm)}
+          <p className="readout" role="status">
+            seeded {seedMutation.data.count} — by class{' '}
+            {JSON.stringify(seedMutation.data.byClass)}, by arm{' '}
+            {JSON.stringify(seedMutation.data.byArm)}
           </p>
         )}
-        <table style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
+
+        <table className="mini-table" style={{ marginTop: 'var(--space-4)' }}>
+          <caption className="field-label" style={{ textAlign: 'left', paddingBottom: 4 }}>
+            Failure-class mix
+          </caption>
           <tbody>
             {CLASS_MIX.map(([label, pct]) => (
               <tr key={label}>
-                <td className="muted" style={{ padding: '0.15rem 0.5rem 0.15rem 0' }}>
-                  {label}
-                </td>
+                <td className="muted">{label}</td>
                 <td className="mono">{pct}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </Step>
 
-      <div className="card">
-        <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>2. Simulate customer behaviour</div>
-        <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+      <Step n={2} title="Simulate customer behaviour">
+        <p className="stat-note" style={{ marginBottom: 'var(--space-3)' }}>
           Every failed payment is simulated to pay or not, using the probabilities below — control
           cases self-recover too, and the treatment effect comes from salary-window timing, not a
           flat bonus for having been treated.
@@ -141,21 +180,21 @@ export default function DemoPage() {
           onClick={() => simulateMutation.mutate()}
           disabled={simulateMutation.isPending}
         >
-          Simulate
+          {simulateMutation.isPending ? 'Simulating…' : 'Simulate'}
         </button>
+
         {simulateMutation.data && (
-          <p className="muted mono" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
+          <p className="readout" role="status">
             considered {simulateMutation.data.considered}, {simulateMutation.data.paid} paid
           </p>
         )}
-        <div style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
-          <table style={{ fontSize: '0.85rem' }}>
+
+        <div style={{ overflowX: 'auto', marginTop: 'var(--space-4)' }}>
+          <table className="mini-table">
             <thead>
               <tr>
                 {PAYMENT_PROBABILITIES[0].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '0.2rem 0.6rem 0.2rem 0' }}>
-                    {h}
-                  </th>
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -163,7 +202,7 @@ export default function DemoPage() {
               {PAYMENT_PROBABILITIES.slice(1).map((row) => (
                 <tr key={row[0]}>
                   {row.map((cell, i) => (
-                    <td key={i} className={i === 0 ? '' : 'mono'} style={{ padding: '0.2rem 0.6rem 0.2rem 0' }}>
+                    <td key={i} className={i === 0 ? 'muted' : 'mono'}>
                       {cell}
                     </td>
                   ))}
@@ -172,24 +211,22 @@ export default function DemoPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </Step>
 
-      <div className="card" style={{ borderColor: 'var(--danger)' }}>
-        <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>3. Reset</div>
-        <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+      <Step n={3} title="Reset" danger>
+        <p className="stat-note" style={{ marginBottom: 'var(--space-3)' }}>
           Clears every case, action, outcome and audit event. Cannot be undone.
         </p>
         <button
-          className="btn"
-          style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+          className="btn btn-danger"
           onClick={() => {
             if (confirm('Clear all demo data?')) resetMutation.mutate()
           }}
           disabled={resetMutation.isPending}
         >
-          Reset all demo data
+          {resetMutation.isPending ? 'Resetting…' : 'Reset all demo data'}
         </button>
-      </div>
+      </Step>
     </div>
   )
 }
