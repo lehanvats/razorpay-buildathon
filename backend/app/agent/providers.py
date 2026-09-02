@@ -82,7 +82,20 @@ class GroqProvider:
         if not response.choices:
             raise LLMUnavailable("Groq returned no choices")
 
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        if not content and choice.finish_reason == "length":
+            # openai/gpt-oss-120b is a reasoning model: its hidden reasoning
+            # tokens count against max_tokens, so a tight budget can exhaust
+            # the whole response before any visible content is emitted.
+            # Treated as LLMUnavailable (not "invalid JSON") so diagnose()
+            # falls back to Gemini instead of burning its one repair retry
+            # against the same budget pressure.
+            raise LLMUnavailable(
+                "Groq truncated the response before emitting any content "
+                "(max_tokens likely exhausted by reasoning tokens)"
+            )
+        return content
 
 
 class AnthropicProvider:
