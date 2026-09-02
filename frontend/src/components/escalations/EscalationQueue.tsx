@@ -7,6 +7,11 @@
 // Resolving records a human decision; it does not resume the agent. A case
 // that hit a stopping rule stays stopped — make that explicit in the UI copy
 // so it doesn't read as a broken button.
+//
+// The rule summary across the top is display-only: it counts the items
+// already in the list and reorders nothing. When one rule is stopping
+// dozens of cases, that is the thing an operator needs to see first — the
+// queue is a symptom, the rule is the cause.
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -41,34 +46,46 @@ function ResolveForm({ caseId }: { caseId: string }) {
 
   return (
     <form
+      className="resolve-form"
       onSubmit={(e) => {
         e.preventDefault()
         if (note.trim()) resolve.mutate(note.trim())
       }}
-      style={{ display: 'flex', gap: '0.5rem' }}
     >
-      <input
-        autoFocus
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="What did you do about this case?"
-        style={{
-          flex: 1,
-          padding: '0.5rem',
-          borderRadius: 8,
-          border: '1px solid var(--line)',
-          background: 'var(--surface)',
-          color: 'var(--ink)',
-        }}
-      />
+      <label className="field">
+        <span className="field-label">Decision note</span>
+        <input
+          className="input"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="What did you do about this case?"
+        />
+      </label>
       <button type="submit" className="btn btn-primary" disabled={resolve.isPending}>
-        Save
+        {resolve.isPending ? 'Saving…' : 'Save'}
       </button>
       <button type="button" className="btn" onClick={() => setOpen(false)}>
         Cancel
       </button>
+      {/* A failed write must say so — otherwise the form just sits there and
+       * the operator assumes the decision was recorded. */}
+      {resolve.isError && (
+        <p role="alert" style={{ color: 'var(--danger)', margin: 0, width: '100%' }}>
+          Could not record that decision. Nothing was saved — try again.
+        </p>
+      )}
     </form>
   )
+}
+
+/** Counts per rule_id, most common first. Derived from `items` only. */
+function ruleSummary(items: EscalationItem[]): [string, number][] {
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    counts.set(item.ruleId, (counts.get(item.ruleId) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])
 }
 
 export function EscalationQueue({ items }: { items: EscalationItem[] }) {
@@ -76,28 +93,44 @@ export function EscalationQueue({ items }: { items: EscalationItem[] }) {
     return <p className="muted">No open escalations.</p>
   }
 
+  const summary = ruleSummary(items)
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
+    <div className="stack">
+      <div className="notice">
         Resolving records your decision on the case's audit trail. It does not resume the agent —
         a case that hit a stopping rule stays stopped.
-      </p>
+      </div>
+
+      {summary.length > 0 && (
+        <div className="chip-row">
+          {summary.map(([ruleId, count]) => (
+            <span key={ruleId} className="chip">
+              <span className="chip-count">{count}</span>
+              <span className="mono muted">{ruleId}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {items.map((item) => (
-        <div key={item.case.id} className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+        <article key={item.case.id} className="card stack-tight">
+          <div className="row-between">
             <div>
-              <Link to={`/cases/${item.case.id}`} className="mono" style={{ fontWeight: 600 }}>
+              <Link to={`/cases/${item.case.id}`} className="link-id">
                 {item.case.orderId}
               </Link>
-              <span className="muted" style={{ marginLeft: '0.5rem' }}>
+              <span className="muted" style={{ marginLeft: 'var(--space-3)' }}>
                 {formatPaise(item.case.amountPaise)} · escalated {formatIST(item.escalatedAt)}
               </span>
             </div>
             <PolicyVerdictBadge decision={item.blockedDecision} ruleId={item.ruleId} />
           </div>
-          <p style={{ margin: '0.5rem 0' }}>{item.reason}</p>
-          <ResolveForm caseId={item.case.id} />
-        </div>
+          <p style={{ margin: 0, color: 'var(--ink-soft)' }}>{item.reason}</p>
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <ResolveForm caseId={item.case.id} />
+          </div>
+        </article>
       ))}
     </div>
   )

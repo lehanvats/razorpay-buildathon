@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { api } from '@/api/client'
+import { ErrorNote, Loading } from '@/components/PageState'
 import { EscalationQueue } from '@/components/escalations/EscalationQueue'
 
 export default function EscalationsPage() {
@@ -13,9 +14,16 @@ export default function EscalationsPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.4rem', marginBottom: '1rem' }}>Escalations</h1>
-      {isLoading && <p className="muted">Loading…</p>}
-      {error && <p style={{ color: 'var(--danger)' }}>Could not load escalations.</p>}
+      <header className="page-head">
+        <h1 className="page-title">Escalations</h1>
+        <p className="page-sub">
+          Cases where the agent stopped on purpose — a stopping rule fired, so it went silent and
+          handed the case to a human instead of spending an attempt.
+        </p>
+      </header>
+
+      {isLoading && <Loading what="escalations" />}
+      {error && <ErrorNote>Could not load escalations.</ErrorNote>}
       {items && <EscalationQueue items={items} />}
     </div>
   )
