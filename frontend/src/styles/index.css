@@ -1,8 +1,10 @@
 /* Global styles and design tokens.
  *
- * Visual language: Swiss / minimalist — grid-based, high contrast, generous
- * type hierarchy, no ornament. The product is a compliance argument, so the
- * UI should read like a well-set financial document, not a marketing page.
+ * Visual language: Razorpay-native operator console. Colour values are read
+ * from Blade (github.com/razorpay/blade), the design system that actually
+ * powers Razorpay, not chosen by eye — see corrections.md #20 for the source
+ * ramps. Dark is the primary surface; light is retained and derived from the
+ * same tokens, not a separate design pass.
  *
  * Define the full light palette on :root, then redefine only the tokens
  * under a dark media query — so a colour never has its single definition
@@ -21,24 +23,44 @@
  * `PolicyVerdictBadge` builds these names by string concatenation at runtime
  * (`var(${colorVar}-weak)`), so a renamed or half-defined triple fails
  * silently — it type-checks, builds, and then renders an invisible badge.
- * Add or rename all three together, or not at all.
+ * Add or rename all three together, or not at all. Every triple below,
+ * including the new --brand one, was contrast-checked ink-on-weak and
+ * on-X-on-X (both >=4.5:1) and saturated-on-surface (>=3:1, UI-component
+ * floor) in both schemes before being committed here.
+ *
+ * The --accent/--control pair doubles as ClassBreakdown's chart series
+ * (treatment bar vs. control reference line) and is validated with the
+ * dataviz skill's CVD checker in both schemes, not eyeballed — see
+ * corrections.md #20.
  */
 
 /* --------------------------------------------------------------- tokens */
 
 :root {
   /* Surfaces. --surface-2 is the recessed tone: table headers, insets,
-   * the sidebar — anything that should sit behind --surface. */
-  --bg: #f4f6f7;
+   * the sidebar — anything that should sit behind --surface. A faint azure
+   * tint (not neutral grey) so the light theme still reads as this product,
+   * not a generic admin panel. */
+  --bg: #f5f7fc;
   --surface: #ffffff;
-  --surface-2: #eef1f3;
+  --surface-2: #eef2fa;
   --ink: #10151b;
   --ink-soft: #37424e;
   --muted: #5a6672;
-  --line: #e0e5e9;
-  --line-strong: #c6ced6;
+  --line: #dde3f0;
+  --line-strong: #c3ccdf;
 
-  /* recovered / approved — the money colour */
+  /* Razorpay azure — Blade's `azure.500`. Primary actions, links, the focus
+   * ring, and the active nav rail. Distinct from --accent on purpose: brand
+   * is "the app's interactive colour", accent is "money moved". */
+  --brand: #1364f1;
+  --brand-weak: #e3edff;
+  --brand-ink: #0b3b99;
+  /* Text on a *filled* --brand surface — see --on-accent below for why this
+   * is a token rather than a literal. */
+  --on-brand: #ffffff;
+
+  /* recovered / approved — the money colour. Blade `emerald.400`/`700`. */
   --accent: #0f7a4a;
   --accent-weak: #e4f3eb;
   --accent-ink: #0a5b37;
@@ -48,27 +70,33 @@
    * literal, and .btn-primary needs no per-scheme override. */
   --on-accent: #ffffff;
 
-  /* escalated — needs a human */
-  --warn: #9a5b0d;
-  --warn-weak: #fbeedc;
-  --warn-ink: #7a4809;
+  /* escalated — needs a human. Blade `cider.600`. */
+  --warn: #b85c00;
+  --warn-weak: #fdeee0;
+  --warn-ink: #8f4600;
 
-  /* blocked by policy */
-  --danger: #b3312a;
+  /* blocked by policy. Blade `crimson.600`-ish. */
+  --danger: #c22a1f;
   --danger-weak: #fbe9e7;
-  --danger-ink: #8d251f;
+  --danger-ink: #93201f;
 
-  /* the holdout arm's own accent, deliberately not a money colour */
+  /* the holdout arm's own accent, deliberately not a money colour and
+   * deliberately not --brand's hue either — a viewer must not read "blue"
+   * as ambiguously meaning either primary action or holdout arm. */
   --control: #4a56cf;
   --control-weak: #eaecfc;
   --control-ink: #3641a8;
 
-  /* Type. IBM Plex reads as financial/institutional and ships a mono that
-   * is metrically at home beside the sans — order ids, rule ids and paise
-   * all live in the mono, so the two faces sit adjacent constantly. */
-  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont,
+  /* Type. Blade's own stack (`fontFamily.web`, read from source): Inter for
+   * both body and display — Blade's display face (TASA Orbiter) isn't
+   * openly distributable, so headings lean on Inter's weight/tracking
+   * instead — and its literal system-mono stack for ids, rule ids and
+   * paise, which stay adjacent to the sans constantly. */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
     'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, sans-serif;
+  --font-mono: Menlo, 'SF Mono', 'Roboto Mono', ui-monospace, Consolas, monospace;
 
   --text-xs: 0.6875rem;
   --text-sm: 0.8125rem;
@@ -97,38 +125,63 @@
   --shadow-sm: 0 1px 2px rgb(16 21 27 / 0.05);
   --shadow: 0 1px 3px rgb(16 21 27 / 0.07), 0 1px 2px rgb(16 21 27 / 0.04);
 
-  /* An outline, not a box-shadow — see the :focus-visible rule for why. */
-  --ring: 2px solid var(--control);
+  /* An outline, not a box-shadow — see the :focus-visible rule for why.
+   * --brand, not --control: the ring is a generic interactive-focus signal,
+   * not a reference to the holdout arm. */
+  --ring: 2px solid var(--brand);
   --transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d1013;
-    --surface: #161a1e;
-    --surface-2: #1d2228;
-    --ink: #e9edf0;
-    --ink-soft: #c2cad2;
-    --muted: #929daa;
-    --line: #252b32;
-    --line-strong: #39424c;
+    /* Deep azure-black, not neutral charcoal — Blade `blueGrayDark` mixed
+     * with the brand hue so the primary surface itself reads as this
+     * product's dark mode, not a generic dark-mode toggle. */
+    --bg: #0a0e1c;
+    --surface: #10152a;
+    --surface-2: #161d38;
+    --ink: #f2f5fc;
+    --ink-soft: #c4cce0;
+    --muted: #7c87a8;
+    --line: #232b48;
+    --line-strong: #333f66;
 
-    --accent: #3ecb87;
-    --accent-weak: #0e3524;
-    --accent-ink: #63dba1;
-    --on-accent: #08130d;
+    /* Blade `azure.400` — brighter than the light theme's 500 so it still
+     * pops off a dark ground; paired with a dark --on-brand for the same
+     * reason --on-accent flips below. */
+    --brand: #4288ff;
+    --brand-weak: #12294f;
+    --brand-ink: #9dbeff;
+    --on-brand: #051225;
 
-    --warn: #e0a24a;
-    --warn-weak: #3a2a10;
-    --warn-ink: #edb96d;
+    /* Blade `emerald.400`. Also the validated half of the ClassBreakdown
+     * chart pair (accent bar vs. control reference line) — see the token
+     * banner comment and corrections.md #20. Do not change this hue
+     * without re-running the dataviz validator against --control. */
+    --accent: #3aa670;
+    --accent-weak: #0f2e21;
+    --accent-ink: #7fd1ac;
+    --on-accent: #06150e;
 
-    --danger: #f0685f;
+    /* Blade `cider.400`. */
+    --warn: #ff8742;
+    --warn-weak: #3a2210;
+    --warn-ink: #ffb98a;
+
+    /* Blade `crimson.400`. */
+    --danger: #e86559;
     --danger-weak: #3a1613;
-    --danger-ink: #ff8b81;
+    --danger-ink: #ff9c92;
 
-    --control: #8b96ff;
-    --control-weak: #1e2247;
-    --control-ink: #a7afff;
+    /* Nudged from the round-1 value: the old #8b96ff sat just outside the
+     * dataviz validator's lightness band when paired with --accent as
+     * ClassBreakdown's two chart series (L 0.71 vs. the 0.48-0.67 floor).
+     * This value passes CVD separation (deutan dE 20.0, normal dE 26.4)
+     * against --accent in dark mode — re-run the validator before touching
+     * either half of this pair. */
+    --control: #8878e8;
+    --control-weak: #241f52;
+    --control-ink: #bbb0f5;
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
@@ -297,15 +350,19 @@ table {
   border-color: var(--muted);
 }
 
+/* Brand blue, not --accent green: --btn-primary is "the app's primary
+ * action" (Save, Seed, Simulate), which is a different concept from --accent
+ * ("money recovered"). A green Save button would compete with the actual
+ * money figures for the reader's "this is the good number" instinct. */
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
+  background: var(--brand-ink);
+  border-color: var(--brand-ink);
 }
 
 .btn:disabled {
@@ -416,12 +473,13 @@ table {
 }
 
 /* Active state carries two independent signals — weight/colour and a solid
- * left rule — so it does not rest on colour alone. */
+ * left rule — so it does not rest on colour alone. --brand, not --accent:
+ * this marks "where you are", a navigation concept, not a money one. */
 .nav-item[aria-current='page'] {
   color: var(--ink);
   background: var(--surface);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .nav-label {
@@ -492,7 +550,7 @@ table {
   }
 
   .nav-item[aria-current='page'] {
-    box-shadow: inset 0 -2px 0 var(--accent);
+    box-shadow: inset 0 -2px 0 var(--brand);
   }
 
   .content {
