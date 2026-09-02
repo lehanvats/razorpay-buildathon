@@ -33,7 +33,11 @@ from app.config import settings
 from app.db.models import WebhookEvent
 from app.db.session import get_db
 from app.integrations.razorpay_client import verify_webhook_signature
-from app.services.case_manager import handle_payment_failed, handle_payment_succeeded
+from app.services.case_manager import (
+    MalformedWebhookPayload,
+    handle_payment_failed,
+    handle_payment_succeeded,
+)
 
 log = logging.getLogger(__name__)
 
@@ -110,7 +114,17 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)) -> d
     # would mean a case-creation failure also rolls back the raw-payload
     # record, which is exactly the replayability step-01 exists to protect.
     if event_type == "payment.failed":
-        handle_payment_failed(db, payload)
+        try:
+            handle_payment_failed(db, payload)
+        except MalformedWebhookPayload as exc:
+            # Graceful failure, not a 500: the raw payload is already durably
+            # stored above, so nothing is lost. Deliberately does NOT stamp
+            # processed_at — that column's documented meaning is "the case
+            # manager has handled it", which never happened here, and the
+            # row staying unprocessed is the whole poison-message signal.
+            # See MalformedWebhookPayload's docstring / corrections.md #1.
+            log.error("rejected malformed payment.failed webhook %s: %s", event_id, exc)
+            return {"status": "rejected", "event_id": event_id, "reason": str(exc)}
         db.execute(
             update(WebhookEvent).where(WebhookEvent.id == row_id).values(processed_at=func.now())
         )

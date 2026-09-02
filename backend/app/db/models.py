@@ -12,11 +12,8 @@ concern (the salary-window rule reasons in IST — see policy/rules.py).
 
 Step-01 implemented `webhook_events`; step-02 added `cases`; step-03 added
 `outcomes`; step-05 added the `cases.escalated_at`/`escalation_rule_id`/
-`escalation_reason` columns; step-06 added `actions` and `cases.last_diagnosed_at`.
-`audit_events` is still fenced off below rather than half-declared: a class
-inheriting Base with no primary key raises at import time, and a partially-
-declared table would produce a migration that lies about what a given step
-delivers.
+`escalation_reason` columns; step-06 added `actions` and `cases.last_diagnosed_at`;
+step-07 added `audit_events`.
 """
 
 from datetime import datetime
@@ -261,22 +258,40 @@ class Action(Base):
         return f"<Action {self.id} {self.kind} case={self.case_id}>"
 
 
-# --------------------------------------------------------------------------
-# TODO(step-07): audit_events.
-#
-# Deliberately commented out rather than declared empty. Uncomment in its
-# step and add columns; the shape below is the agreed schema.
-#
-# class AuditEvent(Base):
-#     """Append-only. Written exclusively by core/audit.py.
-#
-#     No ORM update or delete path is defined for this model on purpose. If you
-#     find yourself needing one, the answer is a new event, not an edit.
-#
-#     Columns:
-#         id, case_id, actor, event_type, payload_json, ts
-#     """
-#
-#     __tablename__ = "audit_events"
-#     # TODO(step-07): columns + index on (case_id, ts) for timeline rendering
-# --------------------------------------------------------------------------
+class AuditEvent(Base):
+    """Append-only. Written exclusively by core/audit.py — no ORM update or
+    delete path is defined for this model on purpose. If you find yourself
+    needing one, the answer is a new event, not an edit.
+
+    `ts` uses `server_default=func.now()`, which is the Postgres *transaction*
+    timestamp, not the wall clock — several events written in one request
+    (e.g. CASE_OPENED/ARM_ASSIGNED/CLASSIFIED in handle_payment_failed) land
+    with byte-identical `ts`. `id`'s insertion-ordered sequence is therefore
+    the real tiebreaker; `services/case_manager.get_timeline` orders by
+    `(ts, id)`, never `ts` alone.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), nullable=False)
+    """Not separately indexed: `ix_audit_events_case_id_ts` below covers a
+    case_id-only lookup as its leftmost prefix, so a second single-column
+    index would just be write overhead on an append-only table."""
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    """A `core.audit.Actor` value."""
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    """A `core.audit.EventType` value."""
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    """Never null: `core.audit.record` stores `{}` rather than omitting the
+    column, so `TimelineEntry.payload` (a required field, no default) never
+    has to handle a missing value at the API boundary."""
+
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_audit_events_case_id_ts", "case_id", "ts"),)
+
+    def __repr__(self) -> str:
+        return f"<AuditEvent {self.id} {self.event_type} case={self.case_id}>"

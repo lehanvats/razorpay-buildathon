@@ -38,8 +38,13 @@ def diagnose(
          the secondary provider.
       3. Parse JSON and validate against Proposal. On failure, retry once
          with the validation error fed back, then raise DiagnosisFailed.
-      4. Write an LLM_PROPOSED audit event carrying `reasoning` verbatim
-         (or LLM_REJECTED on give-up) before returning.
+
+    Deliberately takes no `session` and writes no audit event itself — every
+    other module in the recovery loop does, but this one stays DB-free on
+    purpose (see tests/test_diagnose.py, which builds Proposals with no
+    database at all). `services/case_manager.advance_case`, which already
+    holds both the session and this call's outcome, writes LLM_PROPOSED /
+    LLM_REJECTED instead.
 
     Args:
         case_context: flat dict of case facts; see prompts.build_case_prompt.
@@ -83,9 +88,6 @@ def diagnose(
 
         proposal, error = _try_parse(raw)
         if proposal is not None:
-            # TODO(step-07): audit.record(session, case_id=case_context["case_id"],
-            #   actor=Actor.LLM, event_type=EventType.LLM_PROPOSED,
-            #   payload={"reasoning": proposal.reasoning})
             return proposal
 
         attempt_user = (
@@ -94,8 +96,6 @@ def diagnose(
             "nothing else."
         )
 
-    # TODO(step-07): audit.record(session, case_id=case_context["case_id"],
-    #   actor=Actor.LLM, event_type=EventType.LLM_REJECTED, payload={"error": error})
     raise DiagnosisFailed(
         f"case {case_context.get('case_id')}: model did not produce a "
         f"schema-valid proposal after {MAX_PARSE_RETRIES} repair retry: {error}"

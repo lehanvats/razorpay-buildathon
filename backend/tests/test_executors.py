@@ -12,7 +12,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.db.models import Case
+from app.core.audit import EventType
+from app.db.models import AuditEvent, Case
+from app.executors.base import ExecutionResult, with_audit
 from app.executors.dunning import DunningExecutor, PreDebitNoticeExecutor
 from app.executors.payment_link import PaymentLinkExecutor
 from app.executors.retry import RetryExecutor
@@ -233,3 +235,77 @@ def test_pre_debit_notice_executor_reports_failure_when_send_email_raises(db_ses
     assert result.ok is False
     assert "resend 500" in result.error
     assert db_session.get(Case, case.id).pre_debit_notice_sent_at is None
+
+
+# --- with_audit (step-07) --------------------------------------------
+
+
+class _FakeExecutor:
+    """A minimal Executor, just for exercising `with_audit` in isolation
+    from any real executor's own network/DB side effects."""
+
+    kind = ActionKind.SCHEDULE_RETRY
+
+    def __init__(self, outcome: ExecutionResult | Exception):
+        self._outcome = outcome
+
+    @with_audit
+    def execute(self, session, case_id, verdict) -> ExecutionResult:
+        if isinstance(self._outcome, Exception):
+            raise self._outcome
+        return self._outcome
+
+
+def _events(db_session, case_id):
+    return (
+        db_session.query(AuditEvent)
+        .filter_by(case_id=case_id)
+        .order_by(AuditEvent.ts, AuditEvent.id)
+        .all()
+    )
+
+
+def test_with_audit_writes_started_then_completed_on_success(db_session):
+    case = _make_case(db_session)
+
+    _FakeExecutor(ExecutionResult(ok=True, razorpay_ref="ref_1")).execute(
+        db_session, case.id, _verdict()
+    )
+
+    events = _events(db_session, case.id)
+    assert [e.event_type for e in events] == [
+        EventType.ACTION_STARTED.value,
+        EventType.ACTION_COMPLETED.value,
+    ]
+    assert events[0].payload_json == {"kind": ActionKind.SCHEDULE_RETRY.value}
+    assert events[1].payload_json["razorpay_ref"] == "ref_1"
+
+
+def test_with_audit_writes_started_then_failed_on_a_reported_failure(db_session):
+    case = _make_case(db_session)
+
+    _FakeExecutor(ExecutionResult(ok=False, error="transport error")).execute(
+        db_session, case.id, _verdict()
+    )
+
+    events = _events(db_session, case.id)
+    assert [e.event_type for e in events] == [
+        EventType.ACTION_STARTED.value,
+        EventType.ACTION_FAILED.value,
+    ]
+    assert events[1].payload_json["error"] == "transport error"
+
+
+def test_with_audit_leaves_a_started_but_unfinished_event_when_the_executor_raises(db_session):
+    """A raise instead of a reported ExecutionResult breaks the 'must not
+    raise' contract (executors/base.py), but with_audit doesn't hide it: no
+    try/finally, so ACTION_STARTED stands with no matching ACTION_COMPLETED /
+    ACTION_FAILED -- audit.py's own docstring calls this the correct shape
+    for a crash mid-action, not something to paper over."""
+    case = _make_case(db_session)
+
+    with pytest.raises(RuntimeError, match="executor bug"):
+        _FakeExecutor(RuntimeError("executor bug")).execute(db_session, case.id, _verdict())
+
+    events = _events(db_session, case.id)
+    assert [e.event_type for e in events] == [EventType.ACTION_STARTED.value]

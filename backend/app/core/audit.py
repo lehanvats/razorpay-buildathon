@@ -14,6 +14,8 @@ having happened at all.
 from enum import StrEnum
 from typing import Any
 
+from app.db.models import AuditEvent
+
 
 class Actor(StrEnum):
     """Who produced the event. Renders as the timeline's left gutter."""
@@ -68,4 +70,12 @@ def record(
 
     There is intentionally no ``update_event`` or ``delete_event``.
     """
-    raise NotImplementedError("step-07: audit trail")
+    session.add(
+        AuditEvent(
+            case_id=case_id,
+            actor=actor.value,
+            event_type=event_type.value,
+            payload_json=payload or {},
+        )
+    )
+    session.flush()

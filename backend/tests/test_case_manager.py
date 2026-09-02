@@ -1,7 +1,6 @@
 """Case lifecycle tests: opening (`handle_payment_failed`), closing
-(`handle_payment_succeeded`), escalating (`escalate`), and one diagnose ->
-gate cycle (`advance_case`). `get_timeline` is a later step and still raises
-NotImplementedError.
+(`handle_payment_succeeded`), escalating (`escalate`), one diagnose -> gate
+cycle (`advance_case`), and reading it all back (`get_timeline`).
 
 advance_case tests monkeypatch `diagnose` to return a controlled Proposal
 rather than hitting an LLM (see tests/test_diagnose.py for diagnose() itself)
@@ -15,13 +14,16 @@ import pytest
 from sqlalchemy import func, select
 
 from app.agent.diagnose import DiagnosisFailed
+from app.core.audit import EventType
 from app.core.holdout import Arm
-from app.db.models import Action, Case, Outcome
+from app.db.models import Action, AuditEvent, Case, Outcome
 from app.policy.rules import MAX_CHARGE_ATTEMPTS
 from app.schemas.proposal import ActionKind, Proposal
 from app.services.case_manager import (
+    MalformedWebhookPayload,
     advance_case,
     escalate,
+    get_timeline,
     handle_payment_failed,
     handle_payment_succeeded,
 )
@@ -467,3 +469,158 @@ def _treatment_case_noop(db_session) -> str:
     db_session.add(case)
     db_session.flush()
     return case.id
+
+
+# --- audit trail (step-07) -------------------------------------------
+
+
+def _event_types(db_session, case_id: str) -> list[str]:
+    events = (
+        db_session.query(AuditEvent)
+        .filter_by(case_id=case_id)
+        .order_by(AuditEvent.ts, AuditEvent.id)
+        .all()
+    )
+    return [e.event_type for e in events]
+
+
+def test_handle_payment_failed_writes_the_case_opening_events_in_order(db_session):
+    case_id = handle_payment_failed(db_session, _event())
+
+    assert _event_types(db_session, case_id) == [
+        EventType.WEBHOOK_RECEIVED.value,
+        EventType.CASE_OPENED.value,
+        EventType.ARM_ASSIGNED.value,
+        EventType.CLASSIFIED.value,
+    ]
+
+
+def test_handle_payment_failed_writes_no_events_on_a_repeat_delivery(db_session):
+    """A second payment.failed for an order that already has a case returns
+    the existing id and does nothing else -- including on the audit trail."""
+    first_id = handle_payment_failed(db_session, _event(payment_id="pay_ABC"))
+    handle_payment_failed(db_session, _event(payment_id="pay_ABC_retry_2"))
+
+    assert len(_event_types(db_session, first_id)) == 4
+
+
+def test_handle_payment_failed_raises_on_a_missing_order_id(db_session):
+    """The graceful-failure path: a malformed-but-signature-valid payload
+    must not 500 (see api/routes/webhooks.py and corrections.md #1) -- this
+    tests only the exception `handle_payment_failed` itself raises."""
+    bad_event = {"payload": {"payment": {"entity": {"id": "pay_MALFORMED"}}}}
+
+    with pytest.raises(MalformedWebhookPayload):
+        handle_payment_failed(db_session, bad_event)
+
+    assert db_session.execute(select(func.count()).select_from(Case)).scalar_one() == 0
+
+
+def test_advance_case_writes_llm_proposed_on_a_successful_diagnosis(db_session, monkeypatch):
+    case_id = _treatment_case(db_session, monkeypatch)
+    _stub_diagnose(
+        monkeypatch,
+        Proposal(action=ActionKind.SCHEDULE_RETRY, confidence=0.9, reasoning="clear case"),
+    )
+
+    advance_case(db_session, case_id)
+
+    events = _event_types(db_session, case_id)
+    assert EventType.LLM_PROPOSED.value in events
+    proposed = next(
+        e
+        for e in db_session.query(AuditEvent).filter_by(case_id=case_id)
+        if e.event_type == EventType.LLM_PROPOSED.value
+    )
+    assert proposed.payload_json == {"reasoning": "clear case"}
+
+
+def test_advance_case_writes_llm_rejected_when_diagnosis_fails(db_session, monkeypatch):
+    case_id = _treatment_case(db_session, monkeypatch)
+
+    def _raise(_context):
+        raise DiagnosisFailed("both providers unavailable")
+
+    monkeypatch.setattr("app.services.case_manager.diagnose", _raise)
+
+    advance_case(db_session, case_id)
+
+    assert EventType.LLM_REJECTED.value in _event_types(db_session, case_id)
+    assert EventType.ESCALATED.value in _event_types(db_session, case_id)
+
+
+def test_advance_case_writes_policy_blocked_on_a_blocked_proposal(db_session, monkeypatch):
+    case_id = _treatment_case(
+        db_session, monkeypatch, error_reason="card_stolen_or_lost"
+    )  # HARD_DECLINE
+    _stub_diagnose(
+        monkeypatch,
+        Proposal(action=ActionKind.SCHEDULE_RETRY, confidence=0.9, reasoning="retry it"),
+    )
+
+    advance_case(db_session, case_id)
+
+    events = list(db_session.query(AuditEvent).filter_by(case_id=case_id))
+    blocked = next(e for e in events if e.event_type == EventType.POLICY_BLOCKED.value)
+    assert blocked.payload_json["rule_id"] == "HARD_DECLINE_BLOCK"
+
+
+def test_advance_case_writes_policy_approved_on_approval(db_session, monkeypatch):
+    case_id = _treatment_case(
+        db_session, monkeypatch, error_reason="gateway_technical_error"
+    )  # SOFT_TECHNICAL
+    _stub_diagnose(
+        monkeypatch,
+        Proposal(action=ActionKind.SCHEDULE_RETRY, confidence=0.9, reasoning="retry it"),
+    )
+
+    advance_case(db_session, case_id)
+
+    events = list(db_session.query(AuditEvent).filter_by(case_id=case_id))
+    approved = next(e for e in events if e.event_type == EventType.POLICY_APPROVED.value)
+    assert approved.payload_json["rule_id"] == "PASS"
+
+
+def test_escalate_writes_an_escalated_event(db_session):
+    case_id = _treatment_case_noop(db_session)
+
+    escalate(db_session, case_id, rule_id="LOW_CONFIDENCE_ESCALATE", reason="unsure")
+
+    event = db_session.query(AuditEvent).filter_by(case_id=case_id).one()
+    assert event.event_type == EventType.ESCALATED.value
+    assert event.payload_json == {"rule_id": "LOW_CONFIDENCE_ESCALATE", "reason": "unsure"}
+
+
+def test_payment_succeeded_writes_a_recovered_event(db_session):
+    case_id = _treatment_case_noop(db_session)
+
+    handle_payment_succeeded(db_session, _paid_event())
+
+    event = db_session.query(AuditEvent).filter_by(case_id=case_id).one()
+    assert event.event_type == EventType.RECOVERED.value
+    assert event.payload_json == {"amount_paise": 149900}
+
+
+def test_get_timeline_orders_by_ts_then_id_and_extracts_rule_id(db_session):
+    """Several events land in one transaction with an identical `ts`
+    (Postgres's server_default is the transaction timestamp, not the wall
+    clock) -- `id`'s insertion-ordered sequence, not `ts` alone, is what
+    keeps this in true chronological order. See db/models.py:AuditEvent."""
+    case_id = handle_payment_failed(db_session, _event())
+
+    timeline = get_timeline(db_session, case_id)
+
+    assert [entry["event_type"] for entry in timeline] == [
+        EventType.WEBHOOK_RECEIVED.value,
+        EventType.CASE_OPENED.value,
+        EventType.ARM_ASSIGNED.value,
+        EventType.CLASSIFIED.value,
+    ]
+    classified = timeline[-1]
+    assert classified["payload"] == {"failure_class": "SOFT_FUNDS"}
+    assert classified["rule_id"] is None  # only policy events carry rule_id
+
+
+def test_get_timeline_is_empty_for_a_case_with_no_events(db_session):
+    case_id = _treatment_case_noop(db_session)
+    assert get_timeline(db_session, case_id) == []

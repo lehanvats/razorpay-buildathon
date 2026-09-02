@@ -26,9 +26,11 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.agent.diagnose import DiagnosisFailed, diagnose
+from app.core.audit import Actor, EventType
+from app.core.audit import record as audit_record
 from app.core.holdout import Arm, assign_arm
 from app.core.taxonomy import FailureClass, classify
-from app.db.models import Action, Case, Outcome
+from app.db.models import Action, AuditEvent, Case, Outcome
 from app.policy.gate import gate
 from app.policy.rules import MAX_CHARGE_ATTEMPTS, MAX_MESSAGES_PER_CASE
 from app.policy.snapshot import CaseSnapshot
@@ -41,6 +43,21 @@ from app.schemas.proposal import ActionKind, Decision
 #: calls (e.g. a retried scheduler tick, once step-06 exists) must not
 #: re-diagnose a case that already stopped.
 _TERMINAL_STATUSES = frozenset({"recovered", "escalated", "exhausted"})
+
+
+class MalformedWebhookPayload(ValueError):
+    """A signature-valid webhook whose payload is missing a field this
+    handler needs to open a case.
+
+    Real Razorpay deliveries always populate these fields (see
+    corrections.md #1); this exists for the payload that doesn't, so the
+    route can turn it into a graceful 200-and-log rather than a 500 that
+    Razorpay redelivers forever against the same crash. Caught in
+    `api/routes/webhooks.py`, which logs it and deliberately leaves the
+    stored `WebhookEvent.processed_at` NULL — the row stays in
+    `webhook_events` as the poison-message record, matching that column's
+    documented "NULL until handled" meaning.
+    """
 
 
 def _is_mandate(payment_entity: dict) -> bool:
@@ -74,9 +91,21 @@ def handle_payment_failed(session: Any, event: dict) -> str:
 
     Returns:
         The case id — new, or the existing one for a repeat failure.
+
+    Raises:
+        MalformedWebhookPayload: `entity` is missing `order_id`, `id` or
+            `amount` — see that exception's docstring for what the caller
+            (the webhook route) does with it.
     """
-    entity = event["payload"]["payment"]["entity"]
-    order_id = entity["order_id"]
+    entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+    order_id = entity.get("order_id")
+    payment_id = entity.get("id")
+    amount_paise = entity.get("amount")
+    if not order_id or not payment_id or amount_paise is None:
+        raise MalformedWebhookPayload(
+            "payment.failed entity missing required field(s): "
+            f"order_id={order_id!r} id={payment_id!r} amount={amount_paise!r}"
+        )
 
     existing = session.execute(
         select(Case).where(Case.razorpay_order_id == order_id)
@@ -86,21 +115,14 @@ def handle_payment_failed(session: Any, event: dict) -> str:
 
     case_id = str(uuid4())
     arm = assign_arm(case_id)
-    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.WEBHOOK,
-    #   event_type=EventType.CASE_OPENED, payload={"order_id": order_id})
-    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
-    #   event_type=EventType.ARM_ASSIGNED, payload={"arm": arm.value})
-
     failure_class = classify(entity)
-    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
-    #   event_type=EventType.CLASSIFIED, payload={"failure_class": failure_class.value})
 
     case = Case(
         id=case_id,
         razorpay_order_id=order_id,
-        razorpay_payment_id=entity["id"],
+        razorpay_payment_id=payment_id,
         customer_email=entity.get("email"),
-        amount_paise=entity["amount"],
+        amount_paise=amount_paise,
         currency=entity.get("currency", "INR"),
         method=entity.get("method", "unknown"),
         is_mandate=_is_mandate(entity),
@@ -114,6 +136,38 @@ def handle_payment_failed(session: Any, event: dict) -> str:
     )
     session.add(case)
     session.flush()
+
+    # Audit calls sit *after* the flush above, not before: audit_events.case_id
+    # is an FK to cases.id, so writing them earlier would raise a foreign key
+    # violation on their own flush rather than the case's.
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.WEBHOOK,
+        event_type=EventType.WEBHOOK_RECEIVED,
+        payload={"event": event.get("event", "payment.failed")},
+    )
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.WEBHOOK,
+        event_type=EventType.CASE_OPENED,
+        payload={"order_id": order_id},
+    )
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.POLICY,
+        event_type=EventType.ARM_ASSIGNED,
+        payload={"arm": arm.value},
+    )
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.POLICY,
+        event_type=EventType.CLASSIFIED,
+        payload={"failure_class": failure_class.value},
+    )
 
     # Deliberately NOT calling advance_case here, even for actionable
     # (treatment) cases: advance_case calls diagnose(), a synchronous LLM
@@ -199,8 +253,27 @@ def advance_case(session: Any, case_id: str) -> None:
     try:
         proposal = diagnose(_build_case_context(case, now=now))
     except DiagnosisFailed as exc:
+        # LLM_PROPOSED/LLM_REJECTED are recorded here, not inside diagnose()
+        # itself: diagnose() takes no `session` on purpose (see its own
+        # docstring and tests/test_diagnose.py, which construct Proposals
+        # with no database at all) — this is the one place that has both the
+        # outcome and a session to record it against.
+        audit_record(
+            session,
+            case_id=case_id,
+            actor=Actor.LLM,
+            event_type=EventType.LLM_REJECTED,
+            payload={"error": str(exc)},
+        )
         escalate(session, case_id, rule_id="DIAGNOSIS_FAILED", reason=str(exc))
         return
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.LLM,
+        event_type=EventType.LLM_PROPOSED,
+        payload={"reasoning": proposal.reasoning},
+    )
 
     verdict = gate(_build_snapshot(case, now=now), proposal)
 
@@ -229,8 +302,13 @@ def advance_case(session: Any, case_id: str) -> None:
             # gap this leaves.
             case.status = "exhausted"
             session.flush()
-        # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
-        #   event_type=EventType.POLICY_BLOCKED, payload={"rule_id": verdict.rule_id})
+        audit_record(
+            session,
+            case_id=case_id,
+            actor=Actor.POLICY,
+            event_type=EventType.POLICY_BLOCKED,
+            payload={"rule_id": verdict.rule_id},
+        )
         return
 
     # APPROVE or REWRITE: verdict.effective_action/effective_timing is what
@@ -257,8 +335,13 @@ def advance_case(session: Any, case_id: str) -> None:
         return
     case.status = "scheduled"
     session.flush()
-    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
-    #   event_type=EventType.POLICY_APPROVED, payload={"rule_id": verdict.rule_id})
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.POLICY,
+        event_type=EventType.POLICY_APPROVED,
+        payload={"rule_id": verdict.rule_id},
+    )
 
 
 #: Maps a *successfully executed* action's kind to Outcome.via. OFFER_DISCOUNT
@@ -340,10 +423,11 @@ def handle_payment_succeeded(session: Any, event: dict) -> None:
 
     `order_id` is read with `.get`, not `[...]`, specifically so a
     `payment_link.paid` payload that omits it (or omits `payment` entirely)
-    falls through to the `reference_id` lookup instead of raising — the
-    general malformed-payload story is still step-07's (see corrections.md
-    #1), but this one specific path needs to reach the fallback to be
-    reachable at all.
+    falls through to the `reference_id` lookup instead of raising. Every
+    other field below is read the same defensive way, so — unlike
+    `handle_payment_failed`, which raises `MalformedWebhookPayload` on a
+    missing required field — this handler never had a bare-indexing crash
+    to fix; see corrections.md #13.
     """
     payload = event.get("payload", {})
     entity = payload.get("payment", {}).get("entity", {})
@@ -381,8 +465,13 @@ def handle_payment_succeeded(session: Any, event: dict) -> None:
     case.status = "recovered"
     case.closed_at = outcome.recovered_at
     _cancel_pending_actions(session, case.id)
-    # TODO(step-07): audit.record(session, case_id=case.id, actor=Actor.WEBHOOK,
-    #   event_type=EventType.RECOVERED, payload={"amount_paise": amount_paise})
+    audit_record(
+        session,
+        case_id=case.id,
+        actor=Actor.WEBHOOK,
+        event_type=EventType.RECOVERED,
+        payload={"amount_paise": amount_paise},
+    )
 
     session.flush()
 
@@ -405,12 +494,39 @@ def escalate(session: Any, case_id: str, *, rule_id: str, reason: str) -> None:
     case.escalated_at = datetime.now(UTC)
     case.escalation_rule_id = rule_id
     case.escalation_reason = reason
-    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.POLICY,
-    #   event_type=EventType.ESCALATED, payload={"rule_id": rule_id, "reason": reason})
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.POLICY,
+        event_type=EventType.ESCALATED,
+        payload={"rule_id": rule_id, "reason": reason},
+    )
 
     session.flush()
 
 
 def get_timeline(session: Any, case_id: str) -> list[dict]:
-    """Read the append-only audit trail for the case-detail view."""
-    raise NotImplementedError("step-07: timeline rendering")
+    """Read the append-only audit trail for the case-detail view.
+
+    Ordered by `(ts, id)`, never `ts` alone: Postgres's `now()` is the
+    *transaction* timestamp, so several events written in one request (e.g.
+    CASE_OPENED/ARM_ASSIGNED/CLASSIFIED in `handle_payment_failed`) share an
+    identical `ts` — `id`'s insertion-ordered sequence is what actually
+    orders them. Never filtered: a redacted audit trail is not an audit
+    trail (see api/routes/cases.py, CaseTimeline.tsx).
+    """
+    events = session.execute(
+        select(AuditEvent)
+        .where(AuditEvent.case_id == case_id)
+        .order_by(AuditEvent.ts, AuditEvent.id)
+    ).scalars()
+    return [
+        {
+            "ts": event.ts,
+            "actor": event.actor,
+            "event_type": event.event_type,
+            "payload": event.payload_json,
+            "rule_id": event.payload_json.get("rule_id"),
+        }
+        for event in events
+    ]

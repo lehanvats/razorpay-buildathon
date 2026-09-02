@@ -15,8 +15,13 @@
 //     exactly what the model said and exactly what the policy did about it.
 //  2. Never filter or reorder events. A redacted audit trail is not an audit
 //     trail. Order by timestamp ascending, show everything.
+//
+// Retagged step-07 -> step-08: see CaseDetailPage.tsx's note. The backend
+// this renders (GET /api/cases/{id} -> CaseDetail.timeline, already ordered
+// (ts, id) ascending by services/case_manager.get_timeline) is done and
+// tested; this component has no app shell to mount into yet.
 
 export function CaseTimeline() {
-  // TODO(step-07)
+  // TODO(step-08)
   return null
 }

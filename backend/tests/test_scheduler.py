@@ -10,7 +10,8 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.db.models import Action, Case
+from app.core.audit import EventType
+from app.db.models import Action, AuditEvent, Case
 from app.scheduler.poller import (
     MAX_ATTEMPTS_PER_ACTION,
     cancel,
@@ -78,6 +79,27 @@ def test_schedule_writes_an_action_row_with_the_full_verdict(db_session):
     assert action.scheduled_for == run_at
     assert action.executed_at is None
     assert action.payload_json["rule_id"] == "SALARY_WINDOW_RESCHEDULE"
+
+
+def test_schedule_writes_an_action_scheduled_event(db_session):
+    case = _make_case(db_session)
+    run_at = datetime(2026, 9, 5, 9, 0, tzinfo=UTC)
+
+    action_id = schedule(
+        db_session,
+        case_id=case.id,
+        kind=ActionKind.SCHEDULE_RETRY,
+        verdict=_verdict(),
+        run_at=run_at,
+    )
+
+    event = db_session.query(AuditEvent).filter_by(case_id=case.id).one()
+    assert event.event_type == EventType.ACTION_SCHEDULED.value
+    assert event.payload_json == {
+        "kind": ActionKind.SCHEDULE_RETRY.value,
+        "scheduled_for": run_at.isoformat(),
+        "action_id": action_id,
+    }
 
 
 def test_schedule_fires_pre_debit_notice_eagerly_for_an_unnotified_mandate(db_session, monkeypatch):
@@ -367,6 +389,24 @@ def test_dispatch_runs_the_full_send_payment_link_fan_out(db_session, monkeypatc
     updated_case = db_session.get(Case, case.id)
     assert updated_case.status == "awaiting_customer"
     assert updated_case.messages_sent == 1
+
+    # Both fan-out executors are audited via with_audit, in the order they
+    # ran, alongside schedule()'s own ACTION_SCHEDULED event.
+    events = (
+        db_session.query(AuditEvent)
+        .filter_by(case_id=case.id)
+        .order_by(AuditEvent.ts, AuditEvent.id)
+        .all()
+    )
+    assert [e.event_type for e in events] == [
+        EventType.ACTION_SCHEDULED.value,
+        EventType.ACTION_STARTED.value,
+        EventType.ACTION_COMPLETED.value,
+        EventType.ACTION_STARTED.value,
+        EventType.ACTION_COMPLETED.value,
+    ]
+    assert events[1].payload_json == {"kind": ActionKind.SEND_PAYMENT_LINK.value}
+    assert events[2].payload_json["razorpay_ref"] == "plink_FANOUT"
 
 
 def test_dispatch_survives_an_executor_that_raises_instead_of_reporting_failure(

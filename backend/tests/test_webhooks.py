@@ -301,3 +301,25 @@ def test_malformed_json_rejected_after_signature_passes(client, db_session):
 
     assert response.status_code == 400
     assert _row_count(db_session) == 0
+
+
+def test_malformed_payment_failed_entity_is_rejected_gracefully_not_500(client, db_session):
+    """corrections.md #1: a correctly-signed payment.failed whose entity is
+    missing order_id must not 500 -- that would make every Razorpay
+    redelivery hit the identical crash forever. The raw payload is still
+    durably stored (replayable if the code changes), but processed_at stays
+    NULL: `handle_payment_failed` never actually handled it."""
+    raw = (
+        b'{"event": "payment.failed", "payload": {"payment": {"entity": {"id": "pay_MALFORMED"}}}}'
+    )
+    response = client.post(URL, content=raw, headers=_headers(raw, event_id="evt_MALFORMED"))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "rejected"
+
+    row = db_session.execute(
+        select(WebhookEvent).where(WebhookEvent.event_id == "evt_MALFORMED")
+    ).scalar_one()
+    assert row.processed_at is None
+    assert db_session.execute(select(func.count()).select_from(Case)).scalar_one() == 0

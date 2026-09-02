@@ -10,13 +10,15 @@ just a stuck case.
 Resolving is a human action and is audited as Actor.HUMAN — the trail must
 distinguish what the agent did from what a person did.
 
-Deferred to step-08 (dashboard), not step-05: `services/case_manager.escalate()`
-now writes `cases.escalated_at`/`escalation_rule_id`/`escalation_reason`, which
-is enough to implement GET below today. But POST /resolve's `note` has no
-durable home until step-07's audit trail exists — recording it anywhere else
-would be a throwaway mechanism step-07 immediately replaces. Building the read
-route without the write route the same screen needs isn't worth doing twice;
-see corrections.md.
+Deferred to step-08 (dashboard), not step-05 or step-07: `services/
+case_manager.escalate()` writes `cases.escalated_at`/`escalation_rule_id`/
+`escalation_reason`, and `core/audit.py` (step-07) now gives POST /resolve's
+`note` a durable home — a new `core.audit.EventType` member and an
+`audit.record(..., actor=Actor.HUMAN, ...)` call, both trivial additions.
+Both routes are implementable today. Left commented anyway: building the
+read route without the write route the same screen needs isn't worth doing
+twice, and step-08 is where the dashboard's filtering/list conventions get
+decided — this screen shares them. See corrections.md.
 """
 
 from fastapi import APIRouter

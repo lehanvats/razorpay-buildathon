@@ -55,6 +55,8 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.core.audit import Actor, EventType
+from app.core.audit import record as audit_record
 from app.core.holdout import Arm
 from app.db.models import Action, Case
 from app.executors.base import ExecutionResult, Executor
@@ -147,9 +149,13 @@ def schedule(
     )
     session.add(action)
     session.flush()
-    # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.SCHEDULER,
-    #   event_type=EventType.ACTION_SCHEDULED,
-    #   payload={"kind": kind.value, "scheduled_for": run_at.isoformat(), "action_id": action.id})
+    audit_record(
+        session,
+        case_id=case_id,
+        actor=Actor.SCHEDULER,
+        event_type=EventType.ACTION_SCHEDULED,
+        payload={"kind": kind.value, "scheduled_for": run_at.isoformat(), "action_id": action.id},
+    )
     return action.id
 
 

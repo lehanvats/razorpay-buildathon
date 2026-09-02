@@ -6,18 +6,17 @@ rather than by convention — there is no way to hand an executor an
 unapproved suggestion without deliberately constructing a fake verdict.
 
 Every executor writes an audit event before acting and after acting. An
-executor that can act silently is a bug. `core/audit.py` doesn't exist until
-step-07, so the actual `audit.record` calls below are TODO(step-07) markers
-rather than real calls — the same deferral pattern every step-06 call site in
-`services/case_manager.py` already uses. `with_audit` still does its real job
-today: it is the single seam every executor's `execute` passes through, so
-wiring the audit calls in step-07 is a one-file change, not a per-executor one.
+executor that can act silently is a bug. `with_audit` is the single seam
+every executor's `execute` passes through, so every executor is audited by
+construction rather than by each one remembering to.
 """
 
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Protocol
 
+from app.core.audit import Actor, EventType
+from app.core.audit import record as audit_record
 from app.schemas.proposal import ActionKind, Verdict
 
 
@@ -27,7 +26,7 @@ class ExecutionResult:
 
     Persisted onto `actions.result`/`error`/`razorpay_ref` by
     `scheduler.poller.dispatch`, and mirrored into an ACTION_COMPLETED /
-    ACTION_FAILED audit event by `with_audit` (TODO(step-07)).
+    ACTION_FAILED audit event by `with_audit`.
     """
 
     ok: bool
@@ -88,20 +87,39 @@ def with_audit(fn):
     written before the call and ACTION_COMPLETED / ACTION_FAILED after it.
 
     Applied to every executor. Wrapping here rather than trusting each
-    executor to remember means a new executor is audited by construction —
-    once step-07 implements `core/audit.py`, this is the one place that
-    needs to change.
+    executor to remember means a new executor is audited by construction.
+
+    Deliberately no try/finally around `fn(...)`: if an executor raises
+    instead of honoring its "must not raise" contract (see `Executor.execute`
+    above), ACTION_STARTED is already flushed and no ACTION_COMPLETED /
+    ACTION_FAILED follows — a started-but-unfinished step on the timeline,
+    which is exactly the crash signature this module's docstring says to
+    prefer over silence. `scheduler.poller.dispatch`'s own except-and-convert
+    backstop still catches the exception one frame up; this wrapper does not
+    need to.
     """
 
     @wraps(fn)
     def wrapper(self, session: Any, case_id: str, verdict: Verdict) -> ExecutionResult:
-        # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.EXECUTOR,
-        #   event_type=EventType.ACTION_STARTED, payload={"kind": self.kind.value})
+        audit_record(
+            session,
+            case_id=case_id,
+            actor=Actor.EXECUTOR,
+            event_type=EventType.ACTION_STARTED,
+            payload={"kind": self.kind.value},
+        )
         result = fn(self, session, case_id, verdict)
-        # TODO(step-07): audit.record(session, case_id=case_id, actor=Actor.EXECUTOR,
-        #   event_type=EventType.ACTION_COMPLETED if result.ok else EventType.ACTION_FAILED,
-        #   payload={"razorpay_ref": result.razorpay_ref, "detail": result.detail,
-        #            "error": result.error})
+        audit_record(
+            session,
+            case_id=case_id,
+            actor=Actor.EXECUTOR,
+            event_type=EventType.ACTION_COMPLETED if result.ok else EventType.ACTION_FAILED,
+            payload={
+                "razorpay_ref": result.razorpay_ref,
+                "detail": result.detail,
+                "error": result.error,
+            },
+        )
         return result
 
     return wrapper
