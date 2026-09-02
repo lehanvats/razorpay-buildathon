@@ -2,8 +2,15 @@
 //
 //   1. RecoveryCounters   gross vs incremental, equal weight
 //   2. FunnelChart        failed -> eligible -> treated -> recovered
-//   3. ClassBreakdown     per-class, treatment vs control
-//   4. ControlGroupPanel  the holdout, explained, with its caveat
+//   3. ClassBreakdown     per-class, treatment vs control      \ paired,
+//      + ControlGroupPanel the holdout, explained, its caveat  / see below
+//
+// The first two stay full-width, single cards in reading order — they are
+// each one self-contained story (the headline number, the flow) that a
+// side-by-side layout would only compress. ClassBreakdown and
+// ControlGroupPanel are different: the chart's dashed reference line IS the
+// control rate, so the panel that explains where that line comes from
+// belongs beside it, not two full-width cards further down the page.
 //
 // Polls while a demo batch is running so counters climb on camera (the 1:30
 // beat of the video).
@@ -39,8 +46,10 @@ export default function DashboardPage() {
 
       <RecoveryCounters metrics={metrics} />
       <FunnelChart funnel={metrics.funnel} />
-      <ClassBreakdown metrics={metrics} />
-      <ControlGroupPanel metrics={metrics} />
+      <div className="dashboard-split">
+        <ClassBreakdown metrics={metrics} />
+        <ControlGroupPanel metrics={metrics} />
+      </div>
     </div>
   )
 }

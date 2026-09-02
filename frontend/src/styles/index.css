@@ -640,6 +640,24 @@ table {
   gap: var(--space-4);
 }
 
+/* The dashboard's chart-and-context pair: ClassBreakdown needs the room to
+ * stay legible, ControlGroupPanel is a narrower stat block, so an uneven
+ * split reads better than two equal columns. Collapses to one column at the
+ * same width the rest of the shell does, rather than compressing both to
+ * illegible slivers. */
+.dashboard-split {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dashboard-split {
+    grid-template-columns: 1fr;
+  }
+}
+
 .row-between {
   display: flex;
   justify-content: space-between;
@@ -676,39 +694,76 @@ table {
 
 /* ----------------------------------------------------------------- funnel */
 
-.funnel {
+/* Horizontal steps, not stacked bars — see FunnelChart.tsx for why. Wraps
+ * to two rows on narrow screens rather than scrolling: the arrow is decor,
+ * so a step reflowing under its neighbour loses nothing a reader needs. */
+.funnel-flow {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-3) 0;
 }
 
-.funnel-head {
+.funnel-step {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
+  align-items: center;
+  flex: 1;
+  min-width: 140px;
 }
 
-.funnel-track {
-  height: 8px;
-  border-radius: 4px;
+.funnel-arrow {
+  color: var(--line-strong);
+  font-size: var(--text-lg);
+  flex-shrink: 0;
+  padding: 0 var(--space-3);
+  align-self: center;
+}
+
+.funnel-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.funnel-step-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --text-xl exists for exactly this: a number that needs to read as data at
+ * a glance, one step down from the dashboard's own hero figures. */
+.funnel-step-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.funnel-step-share {
+  font-size: var(--text-sm);
+}
+
+.funnel-step-hint {
+  font-size: var(--text-xs);
+  margin-top: var(--space-1);
+}
+
+.funnel-step-bar {
+  height: 6px;
+  border-radius: 3px;
   background: var(--surface-2);
   overflow: hidden;
+  margin: var(--space-2) 0;
 }
 
-.funnel-fill {
+.funnel-step-bar-fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--accent);
   transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.funnel-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-md);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- tooltip */

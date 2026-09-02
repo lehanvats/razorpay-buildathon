@@ -4,9 +4,14 @@
 // unexplained drop between failed and eligible reads as attrition when it is
 // actually us correctly refusing to chase unrecoverable payments.
 //
-// Each bar carries its share of `failed` as well as its count: a bar's
-// length is only legible relative to the top of the funnel, and showing the
-// percentage means the reader does not have to do that division by eye.
+// Each step carries its share of `failed` as well as its count: a step's
+// fill bar is only legible relative to the top of the funnel, and showing
+// the percentage means the reader does not have to do that division by eye.
+//
+// Horizontal steps connected by arrows, not stacked bars — a funnel is a
+// left-to-right narrowing story, and reading it top-to-bottom (round 1's
+// layout) buried that story inside a shape that looks like an unrelated
+// stat list. The underlying numbers and hint copy are unchanged.
 
 import type { FunnelCounts } from '@/api/types'
 
@@ -25,37 +30,36 @@ export function FunnelChart({ funnel }: { funnel: FunnelCounts }) {
       <h2 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>
         Funnel
       </h2>
-      <ol className="funnel" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {STAGES.map((stage) => {
+      <div className="funnel-flow">
+        {STAGES.map((stage, i) => {
           const value = funnel[stage.key]
           const share = (value / max) * 100
           return (
-            <li key={stage.key}>
-              <div className="funnel-head">
-                <span>
-                  {stage.label}
-                  {stage.hint && <span className="muted"> — {stage.hint}</span>}
+            <div className="funnel-step" key={stage.key}>
+              {i > 0 && (
+                // Decorative connector between steps — the narrowing is
+                // already stated as a percentage, so the arrow carries no
+                // information of its own.
+                <span className="funnel-arrow" aria-hidden="true">
+                  &rarr;
                 </span>
-                <span style={{ whiteSpace: 'nowrap' }}>
-                  <span className="funnel-count">{value}</span>
-                  {/* Separated by a middot: "100 100%" set as bare adjacent
-                    * numbers reads as one malformed figure. */}
-                  <span className="muted" style={{ fontSize: 'var(--text-sm)' }}>
-                    {' · '}
-                    {share.toFixed(0)}%
-                  </span>
-                </span>
+              )}
+              <div className="funnel-step-body">
+                <div className="funnel-step-label">{stage.label}</div>
+                <div className="funnel-step-value mono">{value}</div>
+                <div className="muted funnel-step-share">{share.toFixed(0)}%</div>
+                {/* The bar duplicates a number already printed above it, so
+                 * it is decorative to assistive tech rather than a second,
+                 * noisier reading of the same value. */}
+                <div className="funnel-step-bar" aria-hidden="true">
+                  <div className="funnel-step-bar-fill" style={{ width: `${share}%` }} />
+                </div>
+                {stage.hint && <div className="muted funnel-step-hint">{stage.hint}</div>}
               </div>
-              {/* The bar duplicates a number already printed beside it, so it
-               * is decorative to assistive tech rather than a second, noisier
-               * reading of the same value. */}
-              <div className="funnel-track" aria-hidden="true">
-                <div className="funnel-fill" style={{ width: `${share}%` }} />
-              </div>
-            </li>
+            </div>
           )
         })}
-      </ol>
+      </div>
     </section>
   )
 }
