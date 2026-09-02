@@ -1312,13 +1312,63 @@ table {
   min-width: 240px;
 }
 
-/* ------------------------------------------------------------- demo steps */
+/* ----------------------------------------------------------- demo console */
 
-.step-head {
+/* The three demo actions side by side, in run order, instead of three
+ * full-width cards stacked top to bottom — a run-through is one reach
+ * across the strip rather than a scroll past however many cards precede
+ * the one you want. Single column below 900px: three controls plus their
+ * own inputs and captions genuinely need real width each. */
+.demo-strip {
   display: flex;
-  align-items: center;
+  gap: var(--space-6);
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .demo-strip {
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+}
+
+.demo-control {
+  display: flex;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.demo-control-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.demo-control-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin: 0;
+}
+
+.demo-control-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .demo-control-divider {
+    display: none;
+  }
+}
+
+.demo-readouts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .step-num {
