@@ -232,6 +232,16 @@ class Action(Base):
                       (`verdict.model_dump(mode="json")`), so dispatch() can
                       reconstruct it without a second gate() call — the
                       Executor protocol only knows Verdict, not Action.
+        completed_executors  class names (e.g. "PaymentLinkExecutor") of
+                      fan-out steps that already succeeded on a prior
+                      dispatch attempt for this row. A transport failure
+                      partway through a multi-executor fan-out (e.g.
+                      SEND_PAYMENT_LINK's link-then-email pair) releases the
+                      claim for retry — without this, the retry re-ran every
+                      executor from the top, including ones that had already
+                      created a real, non-idempotent side effect (a second
+                      live payment link). dispatch() consults this list to
+                      skip steps already done, rather than re-running them.
     """
 
     __tablename__ = "actions"
@@ -254,6 +264,7 @@ class Action(Base):
     error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     razorpay_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    completed_executors: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -409,6 +409,70 @@ def test_dispatch_runs_the_full_send_payment_link_fan_out(db_session, monkeypatc
     assert events[2].payload_json["razorpay_ref"] == "plink_FANOUT"
 
 
+def test_dispatch_does_not_rerun_an_already_succeeded_fan_out_executor_on_retry(
+    db_session, monkeypatch
+):
+    """Regression (corrections.md #12): SEND_PAYMENT_LINK fans out to
+    PaymentLinkExecutor then DunningExecutor. If the link succeeds but the
+    email transport fails, dispatch() releases the claim for retry — the old
+    code re-ran the loop from the top on the next attempt, which would create
+    a SECOND real, live payment link. The fix must call PaymentLinkExecutor
+    exactly once across both attempts, and DunningExecutor once it succeeds
+    on the retry."""
+    case = _make_case(db_session, status="scheduled")
+
+    link_calls = []
+    monkeypatch.setattr(
+        "app.executors.payment_link.create_payment_link",
+        lambda *a, **kw: (
+            link_calls.append(1),
+            {"id": "plink_ONCE", "short_url": "https://rzp.io/y"},
+        )[1],
+    )
+
+    email_calls = {"count": 0}
+
+    def _flaky_send_email(to, subject, body):
+        email_calls["count"] += 1
+        if email_calls["count"] == 1:
+            raise RuntimeError("timeout")
+        return "msg_retry"
+
+    monkeypatch.setattr("app.executors.dunning.send_email", _flaky_send_email)
+
+    action_id = schedule(
+        db_session,
+        case_id=case.id,
+        kind=ActionKind.SEND_PAYMENT_LINK,
+        verdict=_verdict(
+            effective_action=ActionKind.SEND_PAYMENT_LINK,
+            message_draft="Here is your payment link.",
+        ),
+        run_at=datetime.now(UTC),
+    )
+
+    # First attempt: link succeeds, email fails -> released for retry.
+    action = db_session.get(Action, action_id)
+    dispatch(db_session, action)
+    after_first = db_session.get(Action, action_id)
+    assert after_first.result is False
+    assert after_first.executed_at is None  # released
+    assert after_first.completed_executors == ["PaymentLinkExecutor"]
+    assert after_first.razorpay_ref == "plink_ONCE"  # preserved across the retry
+
+    # Second attempt: PaymentLinkExecutor must be skipped; only the email
+    # (now succeeding) runs.
+    action = db_session.execute(select(Action).where(Action.id == action_id)).scalar_one()
+    dispatch(db_session, action)
+
+    updated_action = db_session.get(Action, action_id)
+    assert updated_action.result is True
+    assert updated_action.razorpay_ref == "plink_ONCE"
+    assert len(link_calls) == 1  # never re-created
+    assert email_calls["count"] == 2  # one failure, one success
+    assert set(updated_action.completed_executors) == {"PaymentLinkExecutor", "DunningExecutor"}
+
+
 def test_dispatch_survives_an_executor_that_raises_instead_of_reporting_failure(
     db_session, monkeypatch
 ):

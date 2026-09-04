@@ -270,6 +270,16 @@ def salary_window(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict | None:
 
     Effective timing is min(next salary window, now + 72h) — never later than
     the fallback, so a case failing on the 6th does not wait 26 days.
+
+    Never moves the debit *earlier* than a floor an earlier rule in the chain
+    already established, though. pre_debit_notice runs before this rule and,
+    for a mandate case, may have deferred the debit to notice + 24h — that is
+    an RBI-mandated floor, not a suggestion, and this rule recomputing purely
+    from `snapshot.now` used to silently undercut it (a mandate case that is
+    also SOFT_FUNDS could get rescheduled to a salary-window day that lands
+    before the notice has matured). Respecting `proposal.timing` here, guarded
+    by `is_mandate`, is what fixes that: a non-mandate SOFT_FUNDS case still
+    gets steered from `snapshot.now` exactly as before.
     """
     if snapshot.failure_class is not FailureClass.SOFT_FUNDS:
         return None
@@ -282,6 +292,13 @@ def salary_window(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict | None:
     next_window = candidate
     fallback = snapshot.now + SOFT_FUNDS_FALLBACK
     effective_timing = min(next_window, fallback)
+
+    if snapshot.is_mandate and proposal.timing is not None and proposal.timing >= effective_timing:
+        # pre_debit_notice's floor already wins; nothing to add. Returning
+        # None (rather than a no-op REWRITE) also keeps the audit trail
+        # honest — the final verdict's rule_id stays PRE_DEBIT_NOTICE_REQUIRED,
+        # which is the rule that actually decided the timing.
+        return None
 
     return Verdict(
         decision=Decision.REWRITE,

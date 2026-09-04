@@ -129,6 +129,37 @@ def test_salary_window_moves_soft_funds_retry(snapshot_factory, proposal_factory
     assert verdict.effective_timing < now + timedelta(days=26)
 
 
+def test_salary_window_does_not_undercut_a_pending_mandate_notice(
+    snapshot_factory, proposal_factory
+):
+    """Regression: a mandate case that is ALSO SOFT_FUNDS used to have its
+    debit time overwritten by salary_window, which recomputed purely from
+    `snapshot.now` and ignored the notice + 24h floor pre_debit_notice had
+    already set two rules earlier in the chain — a real RBI-compliance
+    violation (corrections.md #10), not just a scheduling quirk.
+
+    `now` is deliberately chosen so its own day already falls inside
+    SALARY_WINDOW_DAYS: that makes salary_window's own (buggy) answer
+    `now` itself — the earliest possible wrong answer, and strictly before
+    the notice can have matured. The gate must still land on the notice's
+    floor, not `now`.
+    """
+    now = datetime(2026, 9, 3, 10, 0, tzinfo=UTC)  # the 3rd — already in 1-5
+    snapshot = snapshot_factory(
+        failure_class=FailureClass.SOFT_FUNDS,
+        is_mandate=True,
+        pre_debit_notice_sent_at=None,
+        now=now,
+    )
+    proposal = proposal_factory(action=ActionKind.SCHEDULE_RETRY)
+
+    verdict = gate(snapshot, proposal)
+
+    assert verdict.decision == Decision.REWRITE
+    assert verdict.rule_id == RuleId.PRE_DEBIT_NOTICE_REQUIRED
+    assert verdict.effective_timing == now + timedelta(hours=24)
+
+
 def test_contact_cooldown_blocks_rapid_second_message(snapshot_factory, proposal_factory):
     """< 24h since last contact -> blocked; 4th message -> blocked."""
     proposal = proposal_factory(action=ActionKind.SEND_PAYMENT_LINK)

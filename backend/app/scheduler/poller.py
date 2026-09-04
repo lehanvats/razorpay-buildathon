@@ -264,10 +264,22 @@ def dispatch(session: Session, action: Action) -> None:
     action.executed_at = datetime.now(UTC)  # claim before touching the network
     session.flush()
 
+    # completed_executors carries forward from a prior dispatch attempt on
+    # this same row — a retry after a partial fan-out failure (e.g. the
+    # payment link was created but the follow-up email failed) must not
+    # re-run a step that already produced a real, non-idempotent side
+    # effect. `completed` starts as a copy so a step that succeeds THIS
+    # attempt is added without mutating the set we're still checking against.
+    already_completed = set(action.completed_executors or [])
+    completed = set(already_completed)
+
     ok = True
     error: str | None = None
-    razorpay_ref: str | None = None
+    razorpay_ref: str | None = action.razorpay_ref  # preserve a prior attempt's ref
     for executor in executors:
+        executor_id = type(executor).__name__
+        if executor_id in already_completed:
+            continue
         try:
             result: ExecutionResult = executor.execute(session, case.id, verdict)
         except Exception as exc:  # noqa: BLE001 -- a buggy executor must not
@@ -279,7 +291,9 @@ def dispatch(session: Session, action: Action) -> None:
         if not result.ok:
             ok, error = False, result.error
             break  # don't email a discount link that was never created
+        completed.add(executor_id)
 
+    action.completed_executors = sorted(completed)
     action.result = ok
     action.error = error
     action.razorpay_ref = razorpay_ref
