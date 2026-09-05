@@ -3,6 +3,25 @@ name = "recoup-backend"
 version = "0.1.0"
 description = "Payment-failure recovery agent for Indian payment rails"
 requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "razorpay>=1.4",
+    "resend>=2.4",
+    "groq>=0.11",
+    "google-genai>=0.3",
+    "anthropic>=0.40",
+    "python-dotenv>=1.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
