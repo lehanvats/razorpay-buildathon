@@ -7,8 +7,16 @@ policy/rules.py so that changing one is a visible code change with a
 reviewer, not an env var flipped at 2am.
 """
 
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+"""Anchored to this file's own location, not the process cwd — pydantic-
+settings' default `env_file` lookup is cwd-relative, so `.env` silently goes
+unread (leaving every setting at its empty/default value, no error raised)
+whenever something starts the app or the poller from outside `backend/`."""
 
 
 def _with_psycopg_driver(url: str) -> str:
@@ -32,7 +40,7 @@ def _with_psycopg_driver(url: str) -> str:
 class Settings(BaseSettings):
     """Environment-backed settings, loaded once at import."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
     # --- Database ---
     database_url: str = "postgresql+psycopg://localhost/recoup"
