@@ -94,8 +94,23 @@ class Settings(BaseSettings):
     # --- App ---
     cors_origins: list[str] = ["http://localhost:5173"]
     demo_mode: bool = True
-    """Enables the /api/demo routes (seeder, customer simulator). Must be
-    False in any deployment that could touch live keys."""
+    """Enables the /api/demo routes (seeder, customer simulator) and the
+    /api/test-payment routes. Must be False in any deployment that could
+    touch live keys."""
+
+    frontend_url: str = ""
+    """Public origin of the React app, used to build the `callback_url`
+    Razorpay redirects a payer to after a Payment Link is paid
+    (`integrations.razorpay_client.create_payment_link`). Empty falls back
+    to the first CORS origin, which is the same origin in every deployment
+    this project has — so nothing needs setting unless the two diverge."""
+
+    @property
+    def public_frontend_url(self) -> str:
+        """Where a paying customer lands after a Payment Link: explicit
+        `frontend_url` if set, else the first CORS origin, trailing slash
+        stripped so route paths can be appended verbatim."""
+        return (self.frontend_url or self.cors_origins[0]).rstrip("/")
 
 
 settings = Settings()

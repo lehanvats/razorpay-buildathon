@@ -35,6 +35,12 @@ export type EventType =
   | 'escalated'
   | 'recovered'
   | 'escalation_resolved'
+  // An operator's proposal in the LLM's seat (the test-payment flow) — still
+  // gated, just not model-written. Payload carries `reasoning` verbatim.
+  | 'operator_proposed'
+  // A payment link's `paid` status confirmed against Razorpay's API on the
+  // payer's return redirect, as opposed to arriving by webhook.
+  | 'payment_verified'
 
 export interface CaseSummary {
   id: string
@@ -103,4 +109,38 @@ export interface SeedResult {
 export interface SimulateResult {
   considered: number
   paid: number
+}
+
+/** `POST /api/test-payment` — a case was opened and a real Razorpay Payment
+ * Link minted against it; `paymentUrl` is where the operator goes to pay. */
+export interface TestPaymentResult {
+  caseId: string
+  paymentLinkId: string
+  paymentUrl: string
+  amountPaise: number
+  status: string
+}
+
+/** The query string Razorpay appends to the callback redirect after a
+ * Payment Link is paid. Forwarded to the backend verbatim; only the link id
+ * is guaranteed, since a payer can land on the return page without paying. */
+export interface PaymentCallbackParams {
+  paymentLinkId: string
+  paymentId?: string
+  referenceId?: string
+  paymentLinkStatus?: string
+  signature?: string
+}
+
+/** `POST /api/test-payment/reconcile`. `status` is Razorpay's own link
+ * status (created | partially_paid | paid | expired | cancelled);
+ * `recovered` is whether the case now has an outcome. */
+export interface PaymentReconcileResult {
+  caseId: string
+  status: string
+  recovered: boolean
+  amountPaise: number
+  paymentId: string | null
+  paymentUrl: string | null
+  signatureValid: boolean | null
 }

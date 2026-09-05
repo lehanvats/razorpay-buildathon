@@ -9,8 +9,11 @@ import type {
   CaseSummary,
   DashboardMetrics,
   EscalationItem,
+  PaymentCallbackParams,
+  PaymentReconcileResult,
   SeedResult,
   SimulateResult,
+  TestPaymentResult,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -75,6 +78,21 @@ export const api = {
     request<SeedResult>('/demo/seed', { method: 'POST', body: JSON.stringify({ count, seed }) }),
   simulate: () => request<SimulateResult>('/demo/simulate', { method: 'POST' }),
   reset: () => request<{ status: string }>('/demo/reset', { method: 'POST' }),
+
+  // Test payment — also 404 when demo_mode is off. The first call mints a
+  // real (test-mode) Razorpay Payment Link; the second is what /pay/return
+  // calls with Razorpay's redirect parameters to confirm the payment
+  // server-side and close the case.
+  createTestPayment: (amountPaise: number, customerEmail: string) =>
+    request<TestPaymentResult>('/test-payment', {
+      method: 'POST',
+      body: JSON.stringify({ amountPaise, customerEmail }),
+    }),
+  reconcilePayment: (params: PaymentCallbackParams) =>
+    request<PaymentReconcileResult>('/test-payment/reconcile', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
 }
 
 export { ApiError }

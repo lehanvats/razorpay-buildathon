@@ -47,6 +47,17 @@ class EventType(StrEnum):
     ESCALATED = "escalated"
     RECOVERED = "recovered"
     ESCALATION_RESOLVED = "escalation_resolved"  # actor HUMAN; payload carries note
+    OPERATOR_PROPOSED = "operator_proposed"
+    """Actor HUMAN. A proposal an operator wrote in place of the LLM — the
+    test-payment flow (`services/test_payment.py`). Payload carries the
+    reasoning verbatim, exactly like LLM_PROPOSED, and it goes through the
+    same gate: this event says who proposed, never that the gate was
+    skipped. A separate type rather than LLM_PROPOSED with a HUMAN actor so
+    the timeline never reads "LLM proposed" over something no model wrote."""
+    PAYMENT_VERIFIED = "payment_verified"
+    """Actor EXECUTOR. A Payment Link's `paid` status was confirmed against
+    Razorpay's API on the payer's callback redirect (as opposed to arriving
+    by webhook). Payload: payment_link_id, payment_id, signature_valid."""
 
 
 def record(

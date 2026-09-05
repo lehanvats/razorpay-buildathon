@@ -12,7 +12,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import cases, dashboard, demo, escalations, webhooks
+from app.api.routes import cases, dashboard, demo, escalations, test_payment, webhooks
 from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +27,8 @@ def create_app() -> FastAPI:
         /api/dashboard  funnel, gross vs incremental
         /api/escalations human review queue
         /api/demo       seeder + customer simulator (demo_mode only)
+        /api/test-payment  real Razorpay Payment Link against a simulated
+                        failure, plus callback reconciliation (demo_mode only)
     """
     app = FastAPI(
         title="Recoup",
@@ -48,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(escalations.router)
     app.include_router(demo.router)
+    app.include_router(test_payment.router)
 
     @app.get("/health", tags=["ops"])
     def health() -> dict[str, str]:

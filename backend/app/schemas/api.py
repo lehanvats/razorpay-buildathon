@@ -124,3 +124,54 @@ class SeedRequest(CamelModel):
         default=None,
         description="Fix the RNG so a demo run is reproducible on stage.",
     )
+
+
+class TestPaymentRequest(CamelModel):
+    """Body of `POST /api/test-payment` — one simulated abandoned checkout
+    the operator will then pay for real on Razorpay's test checkout."""
+
+    amount_paise: int = Field(
+        ge=100,
+        le=50_000_000,
+        description="Rs 1 to Rs 5,00,000, in paise. Razorpay's own minimum is Rs 1.",
+    )
+    customer_email: str = Field(
+        min_length=3,
+        max_length=320,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        description="Stamped on the case and the payment link; Razorpay "
+        "notifies this address in test mode too.",
+    )
+
+
+class TestPaymentResult(CamelModel):
+    case_id: str
+    payment_link_id: str
+    payment_url: str
+    amount_paise: int
+    status: str
+
+
+class PaymentReconcileRequest(CamelModel):
+    """Body of `POST /api/test-payment/reconcile`: the query parameters
+    Razorpay appends to the callback redirect, forwarded verbatim by the
+    `/pay/return` page. Everything but the link id is optional because a
+    payer can land on that page without having paid (or by hand)."""
+
+    payment_link_id: str = Field(min_length=1, max_length=64)
+    payment_id: str | None = Field(default=None, max_length=64)
+    reference_id: str | None = Field(default=None, max_length=64)
+    payment_link_status: str | None = Field(default=None, max_length=32)
+    signature: str | None = Field(default=None, max_length=128)
+
+
+class PaymentReconcileResult(CamelModel):
+    case_id: str
+    status: str
+    """Razorpay's own link status: created | partially_paid | paid | expired | cancelled."""
+    recovered: bool
+    amount_paise: int
+    payment_id: str | None = None
+    payment_url: str | None = None
+    signature_valid: bool | None = None
+    """None when the redirect carried no signature to check."""

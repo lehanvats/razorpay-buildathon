@@ -42,6 +42,8 @@ const EVENT_LABEL: Record<EventType, string> = {
   escalated: 'Escalated to human',
   recovered: 'Recovered',
   escalation_resolved: 'Escalation resolved',
+  operator_proposed: 'Operator proposed',
+  payment_verified: 'Payment verified with Razorpay',
 }
 
 /** Tone per event. Anything not listed stays neutral — a new backend event
@@ -56,6 +58,7 @@ const EVENT_TONE: Partial<Record<EventType, Tone>> = {
   escalated: 'warn',
   escalation_resolved: 'warn',
   action_scheduled: 'control',
+  payment_verified: 'accent',
 }
 
 const EVENT_ICON: Partial<Record<EventType, () => JSX.Element>> = {
@@ -67,6 +70,7 @@ const EVENT_ICON: Partial<Record<EventType, () => JSX.Element>> = {
   action_failed: () => <IconBlock size={13} />,
   escalated: () => <IconEscalation size={13} />,
   action_scheduled: () => <IconClock size={13} />,
+  payment_verified: () => <IconCheck size={13} />,
 }
 
 function nodeStyle(tone: Tone | undefined): React.CSSProperties {
@@ -93,9 +97,26 @@ function EntryDetail({ entry }: { entry: TimelineEntry }) {
       </>
     )
   }
-  if (eventType === 'llm_proposed' && typeof payload.reasoning === 'string') {
-    // Rule 1: verbatim, never truncated.
+  if (
+    (eventType === 'llm_proposed' || eventType === 'operator_proposed') &&
+    typeof payload.reasoning === 'string'
+  ) {
+    // Rule 1: verbatim, never truncated. Same treatment whoever proposed:
+    // the gate's verdict follows either way, and the reader should judge
+    // the reasoning, not the author.
     return <p className="tl-reasoning">{payload.reasoning}</p>
+  }
+  if (eventType === 'payment_verified') {
+    // The ids are what an operator would paste into the Razorpay dashboard
+    // to check this for themselves — so they are shown, in mono, not hidden.
+    const linkId = typeof payload.payment_link_id === 'string' ? payload.payment_link_id : null
+    const paymentId = typeof payload.payment_id === 'string' ? payload.payment_id : null
+    return (
+      <p className="tl-reasoning mono" style={{ overflowWrap: 'anywhere' }}>
+        {[linkId, paymentId].filter(Boolean).join(' · ')}
+        {payload.signature_valid === true && ' · callback signature valid'}
+      </p>
+    )
   }
   if (eventType === 'llm_rejected' && typeof payload.error === 'string') {
     return (

@@ -1,15 +1,18 @@
 // App bar + primary nav + content column + footer.
 //
 // One black bar across the top, as on razorpay.com: brand mark on the left,
-// the four text links beside it, the live pipeline-status pill on the right.
+// the five text links beside it, the live pipeline-status pill on the right.
 // Below 760px the links drop to their own scrollable row under the brand
 // (see .appbar / .topnav in styles/index.css). Presentation lives in CSS
 // rather than inline styles so the breakpoint can restyle the same markup.
 //
-// Nav: Dashboard, Cases, Escalations, Demo. Text only — razorpay.com's nav
-// carries no icons, and the escalations item's count badge is the one
-// glyph that earns its place: an unattended human queue is a visible
-// failure state, not a hidden one.
+// Nav: Dashboard, Cases, Escalations, Demo, Test payment. Text only —
+// razorpay.com's nav carries no icons, and the escalations item's count
+// badge is the one glyph that earns its place: an unattended human queue is
+// a visible failure state, not a hidden one. "Test payment" sits last, next
+// to Demo, because both are operator tools rather than views of the data;
+// `end: false` so /pay/return keeps it highlighted while the payer is
+// coming back.
 //
 // The pipeline-status pill answers a different question than that badge:
 // the badge says "N cases need a human"; the pill says "is the automated
@@ -32,6 +35,7 @@ const NAV = [
   { to: '/cases', label: 'Cases', end: false },
   { to: '/escalations', label: 'Escalations', end: false },
   { to: '/demo', label: 'Demo', end: false },
+  { to: '/pay', label: 'Test payment', end: false },
 ] as const
 
 /** The brand glyph: a leaning slash in the beam blues, the same "/" the

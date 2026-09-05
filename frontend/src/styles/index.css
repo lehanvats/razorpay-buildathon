@@ -523,6 +523,17 @@ table {
   align-self: stretch;
   flex: 1;
   min-width: 0;
+  /* The row scrolls inside itself at every width, so a link that doesn't
+   * fit can never widen the document — min-width: 0 alone lets the nowrap
+   * links paint past the box and push the page into horizontal scroll (seen
+   * at 768px once the fifth link arrived). Scrolls by touch/trackpad; a
+   * visible scrollbar under the links reads as a broken border. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topnav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-item {
@@ -612,10 +623,11 @@ table {
 }
 
 /* Below this the nav drops to its own horizontally scrollable row under the
- * brand + pill — five text links plus a brand and a status pill don't fit
- * one 375px row. The bar stays sticky as a whole; only its internal layout
- * wraps. */
-@media (max-width: 760px) {
+ * brand + pill. Brand (with its sub-line), five text links and the status
+ * pill need ~960px of one row; below that the links would either scroll
+ * out of reach behind the pill or be clipped. The bar stays sticky as a
+ * whole; only its internal layout wraps. */
+@media (max-width: 960px) {
   .appbar {
     flex-wrap: wrap;
     height: auto;
@@ -630,17 +642,9 @@ table {
   .topnav {
     order: 3;
     flex-basis: 100%;
-    overflow-x: auto;
     /* A tap target's underline now doubles as the bar's bottom edge. */
     margin: var(--space-1) calc(-1 * var(--space-4)) 0;
     padding: 0 var(--space-2);
-    /* Scrolls by touch; a visible scrollbar under the links (desktop
-     * browsers at narrow widths draw one) reads as a broken border. */
-    scrollbar-width: none;
-  }
-
-  .topnav::-webkit-scrollbar {
-    display: none;
   }
 
   .appbar-right {
@@ -1562,4 +1566,114 @@ table {
   padding: var(--space-2) var(--space-3);
   margin: var(--space-3) 0 0;
   overflow-wrap: anywhere;
+}
+
+/* ----------------------------------------------------------- test payment */
+
+/* Links styled as buttons (the return page's "Open the audit trail"): same
+ * box as a <button>, minus the underline an <a> would bring. */
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* Form beside its explanation, 5:4 — the form is the thing to act on, the
+ * steps are the thing to read once. One column below 900px, like .demo-strip. */
+.pay-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .pay-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pay-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pay-submit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* Numbered steps, reusing .step-num from the demo strip so the two operator
+ * tools count the same way. */
+.how-steps {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.how-steps li {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.how-steps strong {
+  color: var(--ink);
+}
+
+/* The confirmation after Razorpay sends the payer back: one centred column,
+ * the recovered amount in the display face like a dashboard counter. */
+.pay-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.pay-result-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-weak);
+  color: var(--accent-ink);
+}
+
+.pay-result-title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.pay-result-amount {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: var(--accent);
+  margin: 0;
+}
+
+.pay-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: var(--space-2);
 }

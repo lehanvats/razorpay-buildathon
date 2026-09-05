@@ -1,8 +1,8 @@
 """Razorpay API wrapper — test mode throughout.
 
-Covers exactly what the recovery loop needs: create orders, create payment
-links, and verify inbound webhook signatures. Everything else the SDK offers
-is out of scope.
+Covers exactly what the recovery loop needs: create orders, create and fetch
+payment links, and verify inbound signatures (webhook bodies and payment-link
+callback redirects). Everything else the SDK offers is out of scope.
 """
 
 import hmac
@@ -46,6 +46,47 @@ def sign_payload(raw_body: bytes, secret: str) -> str:
     verifier so the two can never drift apart.
     """
     return hmac.new(secret.encode("utf-8"), raw_body, sha256).hexdigest()
+
+
+def payment_link_callback_message(
+    payment_link_id: str, reference_id: str, link_status: str, payment_id: str
+) -> bytes:
+    """The exact byte string Razorpay signs on a Payment Link callback redirect.
+
+    Razorpay's documented order is `payment_link_id | payment_link_reference_id
+    | payment_link_status | razorpay_payment_id`, pipe-joined, signed
+    HMAC-SHA256 with the **API key secret** (not the webhook secret — a
+    redirect has no webhook). Exposed so the tests and the verifier build the
+    message from one definition.
+    """
+    return f"{payment_link_id}|{reference_id}|{link_status}|{payment_id}".encode()
+
+
+def verify_payment_link_callback_signature(
+    *,
+    payment_link_id: str,
+    reference_id: str,
+    link_status: str,
+    payment_id: str,
+    signature: str,
+    secret: str,
+) -> bool:
+    """Verify the `razorpay_signature` query parameter on a callback redirect.
+
+    Same discipline as `verify_webhook_signature`: constant-time compare, and
+    an unconfigured secret fails closed. A valid signature only proves the
+    redirect came from Razorpay — the caller still confirms the link is
+    actually `paid` with `fetch_payment_link` before writing any outcome,
+    because query strings are the customer's to edit.
+    """
+    if not signature or not secret:
+        return False
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        payment_link_callback_message(payment_link_id, reference_id, link_status, payment_id),
+        sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 def _client() -> razorpay.Client:
@@ -99,6 +140,13 @@ def create_payment_link(
     `payment_link.paid` webhook's `payment.entity.order_id` is the link's
     order, not the case's original one — `reference_id` is the fallback key
     `services/case_manager.py` uses when the order_id lookup misses.
+
+    Every link carries a `callback_url` back to the React app's `/pay/return`
+    route. After paying, the customer is redirected there with the payment
+    id, link id, `reference_id` and a signature in the query string, and
+    that page asks the backend to reconcile (`services/test_payment.py`).
+    This is the second, webhook-independent way a recovery gets recorded —
+    the one that works when the API is on a laptop Razorpay cannot reach.
     """
     if amount_paise <= 0:
         raise ValueError("amount_paise must be a positive integer number of paise")
@@ -109,6 +157,8 @@ def create_payment_link(
         "customer": {"email": customer_email},
         "notify": {"email": True},
         "expire_by": int(time.time()) + expires_in_hours * 3600,
+        "callback_url": f"{settings.public_frontend_url}/pay/return",
+        "callback_method": "get",
         # Razorpay's notes values must be strings.
         "notes": {k: str(v) for k, v in notes.items()},
     }
@@ -117,3 +167,15 @@ def create_payment_link(
         data["reference_id"] = str(case_id)
 
     return _client().payment_link.create(data)
+
+
+def fetch_payment_link(payment_link_id: str) -> dict:
+    """Read a Payment Link back from Razorpay.
+
+    The server-side source of truth for "was this link paid?". Its `status`
+    is one of created | partially_paid | paid | expired | cancelled, and
+    `payments` lists the attempts against it. Used by the callback
+    reconciliation path, which never trusts the redirect's own
+    `razorpay_payment_link_status` parameter for a money decision.
+    """
+    return _client().payment_link.fetch(payment_link_id)

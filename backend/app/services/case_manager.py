@@ -70,7 +70,7 @@ def _is_mandate(payment_entity: dict) -> bool:
     return payment_entity.get("subscription_id") is not None
 
 
-def handle_payment_failed(session: Any, event: dict) -> str:
+def handle_payment_failed(session: Any, event: dict, *, case_id: str | None = None) -> str:
     """Open a case from a `payment.failed` event and drive the first step.
 
     Order is load-bearing:
@@ -89,6 +89,13 @@ def handle_payment_failed(session: Any, event: dict) -> str:
     against one Order, so a repeat `payment.failed` for an order that already
     has a case returns the existing case id rather than opening a second one.
     The case's class and arm were written once and are not recomputed.
+
+    `case_id`, when given, is used instead of a fresh uuid4. The arm is still
+    derived from it by `core.holdout.assign_arm` exactly as for a generated
+    id — a caller cannot pick an arm, only an id — which is what lets
+    `services/test_payment.py` pre-select an id that hashes to treatment
+    without touching the holdout logic. Webhook and seeder callers leave it
+    None.
 
     Returns:
         The case id — new, or the existing one for a repeat failure.
@@ -114,7 +121,7 @@ def handle_payment_failed(session: Any, event: dict) -> str:
     if existing is not None:
         return existing.id
 
-    case_id = str(uuid4())
+    case_id = case_id or str(uuid4())
     arm = assign_arm(case_id)
     failure_class = classify(entity)
 

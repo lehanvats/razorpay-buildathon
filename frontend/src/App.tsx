@@ -6,6 +6,10 @@
 //     /cases/:id   CaseDetailPage   the audit timeline — the explainability view
 //   /escalations   EscalationsPage  human review queue
 //   /demo          DemoPage         seed / simulate / reset
+//   /pay           TestPaymentPage  mint a real Razorpay Payment Link against a
+//                                   simulated failure and go pay it
+//   /pay/return    PaymentReturnPage where Razorpay sends the payer back;
+//                                   verifies the payment, then opens the case
 //
 // /cases/:id nests under /cases rather than sitting beside it: CasesPage
 // renders <Outlet/> for both its own index route and :id, so opening a case
@@ -26,6 +30,8 @@ import CasesPage, { CasesEmptyHint } from '@/pages/CasesPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DemoPage from '@/pages/DemoPage'
 import EscalationsPage from '@/pages/EscalationsPage'
+import PaymentReturnPage from '@/pages/PaymentReturnPage'
+import TestPaymentPage from '@/pages/TestPaymentPage'
 
 export default function App() {
   return (
@@ -38,6 +44,8 @@ export default function App() {
         </Route>
         <Route path="/escalations" element={<EscalationsPage />} />
         <Route path="/demo" element={<DemoPage />} />
+        <Route path="/pay" element={<TestPaymentPage />} />
+        <Route path="/pay/return" element={<PaymentReturnPage />} />
       </Routes>
     </AppShell>
   )
