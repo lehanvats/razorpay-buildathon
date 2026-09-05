@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from app.core.taxonomy import FailureClass
 from app.policy.gate import gate
 from app.policy.rules import MAX_CHARGE_ATTEMPTS, MAX_DISCOUNT_PERCENT, RuleId
-from app.schemas.proposal import ActionKind, Decision
+from app.schemas.proposal import ActionKind, Channel, Decision
 
 # --- One test per rule in the README table ---------------------------------
 
@@ -112,6 +112,40 @@ def test_afa_threshold_rewrites_retry_to_payment_link(snapshot_factory, proposal
     assert above_threshold.decision == Decision.REWRITE
     assert above_threshold.rule_id == RuleId.AFA_THRESHOLD_EXCEEDED
     assert above_threshold.effective_action == ActionKind.SEND_PAYMENT_LINK
+
+
+def test_afa_rewrite_supplies_a_message_when_the_retry_proposal_had_none(
+    snapshot_factory, proposal_factory
+):
+    """A bare SCHEDULE_RETRY proposal has no message_draft -- it doesn't need
+    one. Once afa_threshold rewrites it to SEND_PAYMENT_LINK, the verdict
+    must carry a sendable message: DunningExecutor refuses to send an empty
+    draft, which previously left the customer never notified about a payment
+    link that PaymentLinkExecutor had already created for them."""
+    proposal = proposal_factory(action=ActionKind.SCHEDULE_RETRY, message_draft=None, channel=None)
+
+    verdict = gate(snapshot_factory(amount_paise=1_500_001), proposal)
+
+    assert verdict.rule_id == RuleId.AFA_THRESHOLD_EXCEEDED
+    assert verdict.message_draft
+    assert verdict.channel == Channel.EMAIL
+
+
+def test_afa_rewrite_does_not_override_a_message_the_model_already_drafted(
+    snapshot_factory, proposal_factory
+):
+    """If the model somehow drafted a message on a SCHEDULE_RETRY proposal
+    anyway, afa_threshold's fallback must not clobber it -- rules only fill
+    a gap, they don't rewrite copy the model actually wrote."""
+    proposal = proposal_factory(
+        action=ActionKind.SCHEDULE_RETRY,
+        message_draft="the model's own words",
+        channel=Channel.EMAIL,
+    )
+
+    verdict = gate(snapshot_factory(amount_paise=1_500_001), proposal)
+
+    assert verdict.message_draft == "the model's own words"
 
 
 def test_salary_window_moves_soft_funds_retry(snapshot_factory, proposal_factory):
