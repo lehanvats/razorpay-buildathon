@@ -71,11 +71,26 @@ def _require_api_key(value: str, env_name: str) -> str:
     return value
 
 
-_MAX_TOKENS = 1024
+_MAX_TOKENS = 4096
 """Shared response budget for providers whose SDK takes one. Kept in one
 place because Groq's truncation guard below exists precisely because this
-number can run out before any visible content is emitted — a bump here is
-the fix, not a per-provider literal."""
+number can run out before the JSON is complete — a bump here is the fix,
+not a per-provider literal.
+
+4096, not 1024: openai/gpt-oss-120b is a reasoning model and its hidden
+reasoning tokens count against this same budget. At 1024 a real case
+(ab9f88a6, 2026-09-05) came back cut off partway through the proposal —
+`Expecting ',' delimiter: line 7 column 18 (char 162)` — and the repair
+retry, under the same budget, was cut off the same way, so the case
+escalated with DIAGNOSIS_FAILED for what was a budget problem. The visible
+proposal itself is ~150 tokens; the headroom is for the reasoning."""
+
+_GROQ_REASONING_EFFORT = "low"
+"""For Groq's gpt-oss reasoning models only (see GroqProvider.complete).
+The proposal is a seven-field JSON object about one payment; "low" keeps
+the hidden reasoning short, which is both faster and the second half of the
+truncation fix above. Not sent for other models — Groq rejects the
+parameter on models that don't reason."""
 
 
 class GroqProvider:
@@ -97,11 +112,18 @@ class GroqProvider:
         api_key = _require_api_key(settings.groq_api_key, "GROQ_API_KEY")
 
         client = groq.Groq(api_key=api_key)
+        extra: dict = {}
+        if "gpt-oss" in settings.groq_model:
+            extra["reasoning_effort"] = _GROQ_REASONING_EFFORT
         try:
             response = client.chat.completions.create(
                 model=settings.groq_model,
-                max_tokens=_MAX_TOKENS,
+                # max_completion_tokens is the current name for this cap
+                # (max_tokens is its deprecated alias); it bounds reasoning
+                # + visible output together.
+                max_completion_tokens=_MAX_TOKENS,
                 response_format={"type": "json_object"},
+                **extra,
                 # Constrains the API's own output grammar to syntactically
                 # valid JSON, so diagnose.py's parse failures come only from
                 # schema mismatches (wrong keys/types), never malformed
@@ -121,16 +143,20 @@ class GroqProvider:
 
         choice = response.choices[0]
         content = choice.message.content or ""
-        if not content and choice.finish_reason == "length":
-            # openai/gpt-oss-120b is a reasoning model: its hidden reasoning
-            # tokens count against max_tokens, so a tight budget can exhaust
-            # the whole response before any visible content is emitted.
-            # Treated as LLMUnavailable (not "invalid JSON") so diagnose()
-            # falls back to Gemini instead of burning its one repair retry
-            # against the same budget pressure.
+        if choice.finish_reason == "length":
+            # The budget ran out — before any visible content (reasoning
+            # tokens ate all of it) or, worse, partway through the JSON.
+            # Either way the text can never parse, and this used to be
+            # checked only for the empty case: a cut-off proposal went to
+            # diagnose(), failed as "invalid JSON", and the repair retry —
+            # same model, same budget, longer prompt — was cut off again, so
+            # a budget problem escalated a case (ab9f88a6). Treated as
+            # LLMUnavailable so diagnose() falls back to Gemini instead of
+            # spending its one repair retry against the same pressure.
             raise LLMUnavailable(
-                "Groq truncated the response before emitting any content "
-                "(max_tokens likely exhausted by reasoning tokens)"
+                "Groq truncated the response (finish_reason=length, "
+                f"{len(content)} chars emitted; max_completion_tokens={_MAX_TOKENS} "
+                "exhausted, likely by reasoning tokens)"
             )
         return content
 

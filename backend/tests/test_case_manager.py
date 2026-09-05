@@ -168,6 +168,29 @@ def test_escalate_is_a_noop_when_no_case_exists(db_session):
     assert db_session.execute(select(func.count()).select_from(Case)).scalar_one() == 0
 
 
+def test_escalate_caps_an_oversized_reason_at_the_column_width(db_session):
+    """A pydantic ValidationError listing several bad fields runs past the
+    512-char `escalation_reason` column. Postgres would reject the row and the
+    whole escalation would fail — leaving the case open with
+    last_diagnosed_at set, so the poller never retries it and the queue never
+    shows it. The column keeps a prefix; the audit event keeps the full text."""
+    case_id = handle_payment_failed(db_session, _event())
+    reason = "x" * 700
+
+    escalate(db_session, case_id, rule_id="DIAGNOSIS_FAILED", reason=reason)
+    db_session.flush()
+
+    case = db_session.get(Case, case_id)
+    assert case.status == "escalated"
+    assert len(case.escalation_reason) == 512
+    event = db_session.execute(
+        select(AuditEvent).where(
+            AuditEvent.case_id == case_id, AuditEvent.event_type == EventType.ESCALATED.value
+        )
+    ).scalar_one()
+    assert event.payload_json["reason"] == reason
+
+
 def test_escalate_overwrites_a_prior_escalation(db_session):
     """Re-escalating the same case (e.g. a second, unrelated stopping-rule
     hit) records the latest verdict rather than erroring on the first."""

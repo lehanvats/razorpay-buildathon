@@ -22,7 +22,13 @@ from app.db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which silences every logger
+    # created before this runs — harmless from the alembic CLI, but the test
+    # suite upgrades the throwaway database in-process (tests/conftest.py)
+    # after `app.*` is imported, and every app logger went quiet for the rest
+    # of the session: caplog saw nothing, and a warning the code demonstrably
+    # emitted could not be asserted on.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", settings.migration_database_url)
 

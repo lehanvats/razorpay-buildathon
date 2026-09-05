@@ -16,19 +16,29 @@
 //
 // The pipeline-status pill answers a different question than that badge:
 // the badge says "N cases need a human"; the pill says "is the automated
-// pipeline itself healthy". Both are derived from the same `listEscalations`
-// poll this component already owns — no separate endpoint — by checking for
-// the `DIAGNOSIS_FAILED` rule, which is what an LLM-provider outage looks
-// like in this data (see CaseTimeline's `llm_rejected` handling for the same
-// failure surfacing per-case). A dashboard reading gross ₹0 is easy to
-// misread as "no failures happened today"; this pill is the honest version,
-// visible on every page.
+// pipeline itself healthy *right now*". Both are derived from the same
+// `listEscalations` poll this component already owns — no separate endpoint
+// — by checking for the `DIAGNOSIS_FAILED` rule, which is what an
+// LLM-provider outage looks like in this data (see CaseTimeline's
+// `llm_rejected` handling for the same failure surfacing per-case). A
+// dashboard reading gross ₹0 is easy to misread as "no failures happened
+// today"; this pill is the honest version, visible on every page.
+//
+// "Right now" is a one-hour window on `escalatedAt`. An unresolved
+// DIAGNOSIS_FAILED from hours ago is a queue item — it still counts in the
+// badge and still needs a human — but it is not evidence that the provider
+// is down at this moment, and before the window a single stale escalation
+// kept every page reading "LLM diagnosis down" for the rest of the day.
 
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { api } from '@/api/client'
+
+/** How recent a DIAGNOSIS_FAILED escalation must be to count as a live
+ * outage in the pipeline pill. See the file comment. */
+const DIAGNOSIS_OUTAGE_WINDOW_MS = 60 * 60 * 1000
 
 const NAV = [
   { to: '/', label: 'Dashboard', end: true },
@@ -105,8 +115,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     refetchInterval: 10_000,
   })
   const openCount = escalations?.length ?? 0
+  // Evaluated per render, and the query refetches every 10s, so a failure
+  // ages out of the window on its own without a timer of this component's.
+  const cutoff = Date.now() - DIAGNOSIS_OUTAGE_WINDOW_MS
   const diagnosisFailedCount = escalations
-    ? escalations.filter((item) => item.ruleId === 'DIAGNOSIS_FAILED').length
+    ? escalations.filter(
+        (item) =>
+          item.ruleId === 'DIAGNOSIS_FAILED' && new Date(item.escalatedAt).getTime() >= cutoff,
+      ).length
     : null
 
   return (

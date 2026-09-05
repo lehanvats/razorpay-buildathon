@@ -45,6 +45,15 @@ from app.schemas.proposal import ActionKind, Decision
 #: re-diagnose a case that already stopped.
 _TERMINAL_STATUSES = frozenset({"recovered", "escalated", "exhausted"})
 
+#: Width of `cases.escalation_reason` (db/models.py: String(512)). The
+#: reasons that land there are exception texts — a pydantic ValidationError
+#: listing several bad fields runs well past this — and Postgres rejects an
+#: oversized varchar, which would fail the whole escalation write and leave
+#: the case "open" with last_diagnosed_at set: invisible to the poller,
+#: absent from the queue, never retried. The column keeps a prefix; the
+#: ESCALATED audit event keeps the full text.
+_ESCALATION_REASON_MAX = 512
+
 
 class MalformedWebhookPayload(ValueError):
     """A signature-valid webhook whose payload is missing a field this
@@ -501,7 +510,7 @@ def escalate(session: Any, case_id: str, *, rule_id: str, reason: str) -> None:
     case.status = "escalated"
     case.escalated_at = datetime.now(UTC)
     case.escalation_rule_id = rule_id
-    case.escalation_reason = reason
+    case.escalation_reason = reason[:_ESCALATION_REASON_MAX]
     audit_record(
         session,
         case_id=case_id,

@@ -85,6 +85,23 @@ def test_loose_prompt_uses_the_demo_variant():
     assert "unrecoverable" not in system_sent.lower()
 
 
+def test_malformed_output_is_logged_with_the_raw_text(caplog):
+    """The audit trail records only the parser's one-liner; the log must
+    carry the raw reply so a cut-off response can be told from prose."""
+    import logging
+
+    provider = _RecordingProvider('{"action": "SCHEDULE_RETRY", "conf')
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.agent.diagnose"),
+        pytest.raises(DiagnosisFailed),
+    ):
+        diagnose(CASE_CONTEXT, provider=provider, fallback_provider=None)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("case_test" in m and '"conf' in m for m in messages), messages
+
+
 def test_malformed_output_is_retried_once_then_escalates():
     provider = _RecordingProvider("not json at all", "still not json")
 

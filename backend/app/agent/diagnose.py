@@ -10,12 +10,15 @@ executor.
 """
 
 import json
+import logging
 
 from pydantic import ValidationError
 
 from app.agent.prompts import DEMO_LOOSE_SYSTEM_PROMPT, SYSTEM_PROMPT, build_case_prompt
 from app.agent.providers import LLMProvider, LLMUnavailable, get_provider
 from app.schemas.proposal import Proposal
+
+log = logging.getLogger(__name__)
 
 MAX_PARSE_RETRIES = 1
 """Free-form or schema-invalid output is retried exactly once with a
@@ -89,6 +92,17 @@ def diagnose(
         proposal, error = _try_parse(raw)
         if proposal is not None:
             return proposal
+
+        # The audit trail gets the parser's one-line verdict (DiagnosisFailed
+        # below); the log gets the evidence. Without this, a DIAGNOSIS_FAILED
+        # escalation reads "Expecting ',' delimiter: line 7 column 18" and
+        # nobody can tell a cut-off reply from a model that wrote prose.
+        log.warning(
+            "case %s: model output failed to parse (%s); first 600 chars: %r",
+            case_context.get("case_id"),
+            error,
+            raw[:600],
+        )
 
         attempt_user = (
             f"{user}\n\nYour previous response was invalid: {error}\n"
