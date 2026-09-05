@@ -101,6 +101,13 @@ class GroqProvider:
             response = client.chat.completions.create(
                 model=settings.groq_model,
                 max_tokens=_MAX_TOKENS,
+                response_format={"type": "json_object"},
+                # Constrains the API's own output grammar to syntactically
+                # valid JSON, so diagnose.py's parse failures come only from
+                # schema mismatches (wrong keys/types), never malformed
+                # syntax (a stray quote or missing comma) burning the one
+                # repair retry. Requires "JSON" to appear in the prompt —
+                # SYSTEM_PROMPT already says "Respond with JSON only".
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -187,7 +194,13 @@ class GeminiProvider:
             response = client.models.generate_content(
                 model=settings.gemini_model,
                 contents=user,
-                config=types.GenerateContentConfig(system_instruction=system),
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    # Same rationale as Groq's response_format above: forces
+                    # syntactically valid JSON at the API level instead of
+                    # trusting the prompt instruction alone.
+                    response_mime_type="application/json",
+                ),
             )
         except Exception as exc:
             # google-genai's own exception hierarchy covers transport, auth
