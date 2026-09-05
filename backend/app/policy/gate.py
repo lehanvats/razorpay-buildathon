@@ -60,6 +60,12 @@ def gate(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict:
         # model's original one. A rule that didn't touch a given field
         # leaves its Verdict field None, which keeps `current`'s value
         # rather than clobbering an earlier rewrite.
+        #
+        # message_draft/channel are threaded the same way as the others, but
+        # in practice only a rule that rewrites the action into an outreach
+        # action the model didn't draft for (afa_threshold) ever sets them —
+        # see Verdict.message_draft's docstring for why that's the one
+        # sanctioned exception to "rules don't rewrite customer-facing copy".
         last_rewrite = verdict
         current = current.model_copy(
             update={
@@ -78,6 +84,12 @@ def gate(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict:
                     if verdict.effective_discount_percent is not None
                     else current.discount_percent
                 ),
+                "message_draft": (
+                    verdict.message_draft
+                    if verdict.message_draft is not None
+                    else current.message_draft
+                ),
+                "channel": (verdict.channel if verdict.channel is not None else current.channel),
             }
         )
 

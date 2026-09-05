@@ -114,13 +114,18 @@ class Verdict(BaseModel):
     )
     message_draft: str | None = Field(
         default=None,
-        description="Carried through from the proposal verbatim -- no rule "
-        "rewrites customer-facing copy. Executors take only a Verdict, "
-        "never the original Proposal, so this is how DunningExecutor and "
-        "PreDebitNoticeExecutor reach the drafted text.",
+        description="Normally carried through from the proposal verbatim -- "
+        "rules don't rewrite the model's customer-facing copy. The one "
+        "exception is a rule that rewrites the action itself into an "
+        "outreach action the original proposal never needed a message for "
+        "(e.g. AFA_THRESHOLD_EXCEEDED downgrading a bare retry to a payment "
+        "link); such a rule may supply a safe fallback here so the verdict "
+        "it hands to DunningExecutor is actually sendable. Executors take "
+        "only a Verdict, never the original Proposal, so this field is how "
+        "DunningExecutor and PreDebitNoticeExecutor reach the drafted text.",
     )
     channel: Channel | None = Field(
         default=None,
-        description="Carried through from the proposal verbatim, for the "
-        "same reason as message_draft.",
+        description="Carried through from the proposal verbatim, or filled "
+        "in by the same rewriting rule, for the same reason as message_draft.",
     )

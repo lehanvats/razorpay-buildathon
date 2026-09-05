@@ -24,7 +24,7 @@ from datetime import timedelta
 
 from app.core.taxonomy import FailureClass
 from app.policy.snapshot import CaseSnapshot
-from app.schemas.proposal import ActionKind, Decision, Proposal, Verdict
+from app.schemas.proposal import ActionKind, Channel, Decision, Proposal, Verdict
 
 
 class RuleId:
@@ -58,6 +58,15 @@ AFA_THRESHOLD_PAISE = 1_500_000
 Authentication, so no auto-charge is permitted — only a customer-authenticated
 payment link. Source: RBI e-mandate framework."""
 
+AFA_PAYMENT_LINK_FALLBACK_MESSAGE = (
+    "We were unable to complete your recent payment automatically because "
+    "the amount requires additional authentication. Please use the secure "
+    "payment link we've sent to complete it yourself."
+)
+"""Sent only when afa_threshold rewrites a bare SCHEDULE_RETRY (no
+message_draft — a pure auto-charge never needed one) into SEND_PAYMENT_LINK,
+which does. Never overrides a message the model actually drafted."""
+
 SALARY_WINDOW_DAYS = (1, 2, 3, 4, 5)
 """Retries for insufficient-funds failures are steered into the start of the
 month. Source: NACH bounce data — insufficient funds is a salary-cycle
@@ -88,7 +97,9 @@ _OUTREACH_ACTIONS = frozenset({ActionKind.SEND_PAYMENT_LINK, ActionKind.OFFER_DI
 # Returning None means "no opinion, continue to the next rule".
 #
 # A REWRITE verdict only sets the fields it actually wants to change
-# (effective_action / effective_timing / effective_discount_percent); gate()
+# (effective_action / effective_timing / effective_discount_percent, plus
+# message_draft / channel for the one rule — afa_threshold — that rewrites
+# into an action requiring a message the model never drafted); gate()
 # threads those forward onto the next rule's input and leaves anything a
 # rule didn't touch as-is. Setting a field a rule doesn't own would clobber
 # an earlier rewrite when gate() merges verdicts in chain order.
@@ -154,7 +165,11 @@ def afa_threshold(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict | None:
     """Above Rs 15,000 no auto-charge is permitted.
 
     Rewrites SCHEDULE_RETRY to SEND_PAYMENT_LINK so the customer authenticates
-    the payment themselves.
+    the payment themselves. A bare retry proposal never carries a
+    message_draft (it doesn't need one), but SEND_PAYMENT_LINK's executor
+    fan-out includes DunningExecutor, which refuses to send with nothing to
+    say — so this rule must supply one when the model didn't draft any,
+    rather than handing DunningExecutor a verdict it can only fail.
     """
     if proposal.action is not ActionKind.SCHEDULE_RETRY:
         return None
@@ -164,6 +179,8 @@ def afa_threshold(snapshot: CaseSnapshot, proposal: Proposal) -> Verdict | None:
         decision=Decision.REWRITE,
         rule_id=RuleId.AFA_THRESHOLD_EXCEEDED,
         effective_action=ActionKind.SEND_PAYMENT_LINK,
+        message_draft=proposal.message_draft or AFA_PAYMENT_LINK_FALLBACK_MESSAGE,
+        channel=proposal.channel or Channel.EMAIL,
         explanation=f"Amount {snapshot.amount_paise}p exceeds the Rs 15,000 "
         "AFA threshold; auto-charge is not permitted, rewriting to a "
         "customer-authenticated payment link.",
