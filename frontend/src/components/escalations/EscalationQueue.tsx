@@ -124,36 +124,43 @@ export function EscalationQueue({ items }: { items: EscalationItem[] }) {
         a case that hit a stopping rule stays stopped.
       </div>
 
+      {/* Cause-first: which rule is stopping cases, and how many, before the
+       * list of individual cases below it. Counts items already in `items`
+       * and reorders nothing — same contract as before, just given more
+       * visual weight than a case's own row gets. */}
       {summary.length > 0 && (
-        <div className="chip-row">
-          {summary.map(([ruleId, count]) => (
-            <span key={ruleId} className="chip">
-              <span className="chip-count">{count}</span>
-              <span className="mono muted">{ruleId}</span>
-            </span>
-          ))}
+        <div className="rule-summary">
+          <span className="rule-summary-label">Stopped by</span>
+          <div className="chip-row">
+            {summary.map(([ruleId, count]) => (
+              <span key={ruleId} className="chip">
+                <span className="chip-count">{count}</span>
+                <span className="mono muted">{ruleId}</span>
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
-      {items.map((item) => (
-        <article key={item.case.id} className="card stack-tight">
-          <div className="row-between">
-            <div>
+      <div className="triage-list">
+        {items.map((item) => (
+          <article key={item.case.id} className="triage-row">
+            <div className="triage-head">
               <Link to={`/cases/${item.case.id}`} className="link-id">
                 {item.case.orderId}
               </Link>
-              <span className="muted" style={{ marginLeft: 'var(--space-3)' }}>
+              <span className="triage-meta muted">
                 {formatPaise(item.case.amountPaise)} · escalated {formatIST(item.escalatedAt)}
               </span>
+              <PolicyVerdictBadge decision={item.blockedDecision} ruleId={item.ruleId} />
             </div>
-            <PolicyVerdictBadge decision={item.blockedDecision} ruleId={item.ruleId} />
-          </div>
-          <p style={{ margin: 0, color: 'var(--ink-soft)' }}>{item.reason}</p>
-          <div style={{ marginTop: 'var(--space-2)' }}>
-            <ResolveForm caseId={item.case.id} />
-          </div>
-        </article>
-      ))}
+            <p className="triage-reason">{item.reason}</p>
+            <div className="triage-action">
+              <ResolveForm caseId={item.case.id} />
+            </div>
+          </article>
+        ))}
+      </div>
     </div>
   )
 }

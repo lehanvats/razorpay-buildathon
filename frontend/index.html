@@ -7,22 +7,26 @@
       name="description"
       content="Recoup — payment-failure recovery for Indian payment rails. The LLM proposes, a policy engine disposes, and a built-in holdout proves the recovery is real."
     />
-    <!-- Follows the palette's --bg in each scheme so the browser chrome does
-         not flash the opposite theme before first paint. -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6f7" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1013" />
+    <!-- The palette is dark-only (razorpay.com has no light mode) and its
+         ground is pure black, so the browser chrome matches before first
+         paint. -->
+    <meta name="theme-color" content="#000000" />
 
-    <!-- IBM Plex Sans + Mono. Preconnect to both hosts: the CSS comes from
-         googleapis, the font files from gstatic, and without the second hint
-         the font fetch pays a fresh connection setup. `display=swap` (and the
-         system fallback stack in styles/index.css) means text is readable on
-         first paint rather than invisible — a FOIT on a projector during a
-         judged demo is worse than a FOUT. -->
+    <!-- Blade's own faces, read from
+         tokens/global/fontFamily/fontFamily.web.ts: Inter for text, TASA
+         Orbiter for headings. TASA Orbiter is on Google Fonts under the OFL,
+         so both come in one request from one host. Mono is a system stack
+         (Blade ships no mono webfont). Preconnect to both hosts: the CSS
+         comes from googleapis, the font files from gstatic, and without the
+         second hint the font fetch pays a fresh connection setup.
+         `display=swap` (and the system fallback stacks in styles/index.css)
+         means text is readable on first paint rather than invisible — a
+         FOIT on a projector during a judged demo is worse than a FOUT. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=TASA+Orbiter:wght@400..800&display=swap"
     />
 
     <title>Recoup — payment recovery</title>

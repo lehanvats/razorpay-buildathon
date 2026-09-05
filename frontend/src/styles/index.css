@@ -1,12 +1,16 @@
 /* Global styles and design tokens.
  *
- * Visual language: Swiss / minimalist — grid-based, high contrast, generous
- * type hierarchy, no ornament. The product is a compliance argument, so the
- * UI should read like a well-set financial document, not a marketing page.
+ * Visual language: Razorpay — not "a dark dashboard that borrows Razorpay's
+ * colours" but the identity of razorpay.com itself: a true-black ground,
+ * electric-blue light beams cutting across the top of the page, TASA Orbiter
+ * (Blade's own heading face) for anything that has to read as a headline,
+ * white-on-black buttons, a horizontal top nav. Values are read from Blade
+ * (github.com/razorpay/blade, `tokens/global/*`) and sampled from
+ * razorpay.com/agent-studio, not chosen by eye — see corrections.md.
  *
- * Define the full light palette on :root, then redefine only the tokens
- * under a dark media query — so a colour never has its single definition
- * inside a conditional block.
+ * Dark only, on purpose. razorpay.com has no light mode, and a second scheme
+ * here would be a second design to keep honest. `color-scheme: dark` on
+ * :root tells the browser, so native selects and scrollbars follow suit.
  *
  * Money is the visual hierarchy: the two recovery counters are the largest
  * type on the dashboard, and incremental gets the same weight as gross.
@@ -18,57 +22,99 @@
  *   --x-weak   a tinted background    — badge and callout fills
  *   --x-ink    text sitting on -weak  — contrast-checked against it
  *
- * `PolicyVerdictBadge` builds these names by string concatenation at runtime
- * (`var(${colorVar}-weak)`), so a renamed or half-defined triple fails
- * silently — it type-checks, builds, and then renders an invisible badge.
- * Add or rename all three together, or not at all.
+ * `PolicyVerdictBadge`, `Tone` and `CaseTimeline` build these names by string
+ * concatenation at runtime (`var(${colorVar}-weak)`), so a renamed or
+ * half-defined triple fails silently — it type-checks, builds, and then
+ * renders an invisible badge. Add or rename all three together, or not at
+ * all. Every triple below was contrast-checked ink-on-weak (>=4.5:1) and
+ * saturated-on-surface (>=3:1, the UI-component floor) against the black
+ * palette before being committed here.
+ *
+ * The --accent/--control pair doubles as ClassBreakdown's chart series
+ * (treatment bar vs. control reference line) and is validated with the
+ * dataviz skill's CVD checker against --surface, not eyeballed — see
+ * corrections.md #20. Do not change either hue without re-running it.
  */
 
 /* --------------------------------------------------------------- tokens */
 
 :root {
-  /* Surfaces. --surface-2 is the recessed tone: table headers, insets,
-   * the sidebar — anything that should sit behind --surface. */
-  --bg: #f4f6f7;
-  --surface: #ffffff;
-  --surface-2: #eef1f3;
-  --ink: #10151b;
-  --ink-soft: #37424e;
-  --muted: #5a6672;
-  --line: #e0e5e9;
-  --line-strong: #c6ced6;
+  color-scheme: dark;
 
-  /* recovered / approved — the money colour */
-  --accent: #0f7a4a;
-  --accent-weak: #e4f3eb;
-  --accent-ink: #0a5b37;
-  /* Text on a *filled* --accent surface. Which end of the green ramp is
-   * legible flips between schemes — white on the light theme's deep green,
-   * near-black on the dark theme's mint — so this is a token rather than a
-   * literal, and .btn-primary needs no per-scheme override. */
-  --on-accent: #ffffff;
+  /* Surfaces. The ground is pure black (sampled #000000 from the reference);
+   * tiles sit on it as near-neutral blacks with a faint cool cast, so the
+   * blue beams behind them read as light, not as a colour the tiles share.
+   * --surface-2 is the recessed tone: table headers, chips, insets. */
+  --bg: #000000;
+  --surface: #0c0f16;
+  --surface-2: #141824;
+  --ink: #ffffff;
+  --ink-soft: #c5cad6;
+  --muted: #8a92a6;
+  /* ≈ white at 8% / 14% over --surface, as hex so the audit script can
+   * compute against them. */
+  --line: #1c2130;
+  --line-strong: #2b3245;
 
-  /* escalated — needs a human */
-  --warn: #9a5b0d;
-  --warn-weak: #fbeedc;
-  --warn-ink: #7a4809;
+  /* Razorpay azure — Blade's `azure.400`, the brighter step that still pops
+   * off black. Links, the focus ring, the active-nav rule. Distinct from
+   * --accent on purpose: brand is "the app's interactive colour", accent is
+   * "money moved". */
+  --brand: #4288ff;
+  --brand-weak: #0f2148;
+  --brand-ink: #9dbeff;
+  --on-brand: #041025;
 
-  /* blocked by policy */
-  --danger: #b3312a;
-  --danger-weak: #fbe9e7;
-  --danger-ink: #8d251f;
+  /* The beams. Sampled from the agent-studio page: the band body clusters at
+   * #0020b0 / #0010a0, the core brightens to #3050c0. Only body::before and
+   * the brand mark use these — they are light, not UI colour. */
+  --beam: #0020b0;
+  --beam-hi: #3050c0;
 
-  /* the holdout arm's own accent, deliberately not a money colour */
-  --control: #4a56cf;
-  --control-weak: #eaecfc;
-  --control-ink: #3641a8;
+  /* Primary action — white on black, as razorpay.com's own "Sign Up" is.
+   * A separate token from --brand, which stays the *interactive* colour
+   * (links, focus, active nav) rather than the *button* colour. */
+  --cta: #ffffff;
+  --cta-hover: #e4e7ef;
+  --on-cta: #000000;
 
-  /* Type. IBM Plex reads as financial/institutional and ships a mono that
-   * is metrically at home beside the sans — order ids, rule ids and paise
-   * all live in the mono, so the two faces sit adjacent constantly. */
-  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont,
+  /* recovered / approved — the money colour. Blade `emerald.400`. Also the
+   * validated half of the ClassBreakdown chart pair — see the banner. */
+  --accent: #3aa670;
+  --accent-weak: #0f2e21;
+  --accent-ink: #7fd1ac;
+  /* Text on a *filled* --accent surface. */
+  --on-accent: #06150e;
+
+  /* escalated — needs a human. Blade `cider.400`. */
+  --warn: #ff8742;
+  --warn-weak: #3a2210;
+  --warn-ink: #ffb98a;
+
+  /* blocked by policy. Blade `crimson.400`. */
+  --danger: #e86559;
+  --danger-weak: #3a1613;
+  --danger-ink: #ff9c92;
+
+  /* the holdout arm's own accent, deliberately not a money colour and
+   * deliberately not --brand's hue either — a viewer must not read "blue"
+   * as ambiguously meaning either primary action or holdout arm. Passes CVD
+   * separation against --accent (deutan dE 20.0, normal dE 26.4) — re-run
+   * the dataviz validator before touching either half of this pair. */
+  --control: #8878e8;
+  --control-weak: #241f52;
+  --control-ink: #bbb0f5;
+
+  /* Type. Blade's own stack, read from
+   * `tokens/global/fontFamily/fontFamily.web.ts`: Inter for text, TASA
+   * Orbiter for headings (now on Google Fonts under the OFL, so it loads
+   * from the same host as Inter — see index.html), and its literal
+   * system-mono stack for ids, rule ids and paise. */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
     'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: 'TASA Orbiter', 'Inter', system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: Menlo, 'SF Mono', 'Roboto Mono', ui-monospace, Consolas, monospace;
 
   --text-xs: 0.6875rem;
   --text-sm: 0.8125rem;
@@ -77,6 +123,7 @@
   --text-lg: 1.25rem;
   --text-xl: 1.75rem;
   --text-2xl: 2.5rem;
+  --text-3xl: 3rem;
 
   /* Dense dashboard scale — this is an operator console, not a landing
    * page, so the steps are tight and the rhythm is 4px. */
@@ -88,51 +135,38 @@
   --space-6: 1.5rem;
   --space-8: 2rem;
 
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
 
-  /* Swiss style takes its depth from rules and tone, not soft shadows.
-   * These are deliberately tight and low-opacity. */
-  --shadow-sm: 0 1px 2px rgb(16 21 27 / 0.05);
-  --shadow: 0 1px 3px rgb(16 21 27 / 0.07), 0 1px 2px rgb(16 21 27 / 0.04);
+  /* The app bar's height, shared with every sticky element that has to sit
+   * under it (.cases-list-pane, .case-facts-rail). */
+  --appbar-h: 64px;
 
-  /* An outline, not a box-shadow — see the :focus-visible rule for why. */
-  --ring: 2px solid var(--control);
+  /* Blade's own elevation ramp, onDark
+   * (`tokens/global/elevation/elevation.web.ts`) — lowRaised for small
+   * inline elements, midRaised for the chart tooltip. */
+  --shadow-sm: 0px 2px 4px 0px hsla(0, 0%, 0%, 0.32);
+  --shadow: 0px 2px 8px 0px hsla(0, 0%, 0%, 0.32);
+
+  /* .card's own elevation: Blade highRaised's geometry at a heavier alpha
+   * (a 0.32 shadow is invisible on a pure-black ground), plus a 1px inset
+   * light line along the top edge so a tile catches the beams like a
+   * physically raised surface. Kept faint — a solid white inset on black
+   * reads as a stray pixel, not a catch-light. */
+  --card-shadow: 0px 8px 24px -4px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.05);
+
+  /* Backdrop blur radius, Blade's own scale (`tokens/global/blur.ts`: low 4
+   * / medium 8 / high 12). Only the app bar blurs — see .card for why the
+   * tiles don't — and it's the one surface always over scrolling content,
+   * so it gets the heaviest step. */
+  --blur-high: 12px;
+
+  /* An outline, not a box-shadow — see the :focus-visible rule for why.
+   * --brand, not --control: the ring is a generic interactive-focus signal,
+   * not a reference to the holdout arm. */
+  --ring: 2px solid var(--brand);
   --transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1013;
-    --surface: #161a1e;
-    --surface-2: #1d2228;
-    --ink: #e9edf0;
-    --ink-soft: #c2cad2;
-    --muted: #929daa;
-    --line: #252b32;
-    --line-strong: #39424c;
-
-    --accent: #3ecb87;
-    --accent-weak: #0e3524;
-    --accent-ink: #63dba1;
-    --on-accent: #08130d;
-
-    --warn: #e0a24a;
-    --warn-weak: #3a2a10;
-    --warn-ink: #edb96d;
-
-    --danger: #f0685f;
-    --danger-weak: #3a1613;
-    --danger-ink: #ff8b81;
-
-    --control: #8b96ff;
-    --control-weak: #1e2247;
-    --control-ink: #a7afff;
-
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
-  }
 }
 
 /* ---------------------------------------------------------------- base */
@@ -141,19 +175,54 @@
   box-sizing: border-box;
 }
 
+/* The black lives on html, and body is deliberately transparent: in the root
+ * stacking context a negative-z-index layer (body::before, the beams) paints
+ * above the root background but *below* body's own background, so a black
+ * body would cover the beams completely. */
 html {
   -webkit-text-size-adjust: 100%;
+  background: var(--bg);
 }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: transparent;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* The beams — razorpay.com/agent-studio's signature: diagonal bands of
+ * electric blue leaning "/" across the upper part of an otherwise black
+ * page. A fixed, non-interactive layer behind everything rather than a
+ * background-image on body: `background-attachment: fixed` is ignored on
+ * iOS, and a pseudo-element can carry its own mask. The bands are
+ * linear-gradients at 112deg (bands sit perpendicular to the gradient line,
+ * so this leans them ~22deg off vertical, matching the reference), a soft
+ * radial core brightens where they cross, and a vertical mask fades the
+ * whole layer out by ~820px so the lower page is plain black exactly as the
+ * reference is. This is also what the app bar's backdrop-filter actually
+ * blurs — on a flat colour, glass is indistinguishable from paint. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* Its own compositor layer: five gradients under a mask are rasterised
+   * once and then scrolled as a texture, not repainted per frame. */
+  will-change: transform;
+  background:
+    radial-gradient(640px 440px at 72% 18%, rgb(48 80 192 / 0.38), transparent 70%),
+    linear-gradient(112deg, transparent 43%, var(--beam) 46%, var(--beam-hi) 48%, var(--beam) 50%, transparent 53%),
+    linear-gradient(112deg, transparent 56%, rgb(0 16 144 / 0.85) 59%, transparent 64%),
+    linear-gradient(112deg, transparent 67%, var(--beam) 71%, transparent 76%),
+    linear-gradient(112deg, transparent 33%, rgb(0 16 128 / 0.65) 36%, transparent 40%);
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95) 0, rgb(0 0 0 / 0.7) 380px, transparent 820px);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.95) 0, rgb(0 0 0 / 0.7) 380px, transparent 820px);
 }
 
 a {
@@ -210,11 +279,30 @@ table,
 /* ------------------------------------------------------------ primitives */
 
 .card {
-  background: var(--surface);
+  /* Translucent, not solid --surface: a card that's actually see-through
+   * lets the beams behind it (body::before) show through as a tint, and 88%
+   * over pure black keeps text at effectively the same contrast as the solid
+   * surface — see the contrast re-audit noted in corrections.md. No
+   * backdrop-filter here, deliberately: at 88% over near-black the tiles are
+   * opaque enough that blurring the beams behind them changes nothing
+   * visible, and every backdrop-filter is a per-frame compositor cost on a
+   * page that will run on a projector. The app bar is the one surface that
+   * earns it — it's the only one text actually scrolls under. */
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-5);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--card-shadow);
+  /* A grid/flex item's inline-axis min-width defaults to its content's
+   * min-content size, not 0 — so a card placed as an item in any grid or
+   * flex row (.dashboard-split, .cases-layout, .case-detail-layout, and
+   * whatever comes next) can hold that row open past its track's intended
+   * width and reintroduce the exact shell-level horizontal scroll .content
+   * already guards against with its own min-width: 0. Fixing it once here,
+   * on the primitive, is cheaper than re-discovering it at every call site
+   * — see .cases-detail-pane's own explicit min-width: 0 for the one place
+   * this alone doesn't reach, because it isn't a .card. */
+  min-width: 0;
 }
 
 /* Section label inside a card — the small caps rule that gives the Swiss
@@ -227,10 +315,17 @@ table,
   color: var(--muted);
 }
 
+/* The headline pairing from the reference: a large, medium-weight,
+ * tight-tracked display line in white, with the explanatory line beneath it
+ * in the same voice but dimmed. TASA Orbiter is the whole difference between
+ * "a dashboard title" and "a Razorpay page" — see --font-display. */
 .page-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 3.2vw, 2.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--ink);
 }
 
 .muted {
@@ -263,8 +358,9 @@ table,
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.6rem;
+  /* Pill, not a rounded rectangle — razorpay.com's own tag shape. */
+  border-radius: 999px;
   font-size: var(--text-xs);
   font-weight: 600;
   line-height: 1.6;
@@ -279,33 +375,40 @@ table {
 
 /* --------------------------------------------------------------- controls */
 
+/* razorpay.com's two button voices: an outlined ghost ("Login") and a solid
+ * white fill ("Sign Up"). The ghost is the default. */
 .btn {
   font: inherit;
   font-size: var(--text-base);
-  font-weight: 500;
-  padding: 0.4rem 0.75rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
+  border: 1px solid rgb(255 255 255 / 0.28);
+  background: transparent;
   color: var(--ink);
   cursor: pointer;
   transition: background var(--transition), border-color var(--transition);
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: var(--muted);
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(255 255 255 / 0.5);
 }
 
+/* White, not --brand blue and not --accent green: --btn-primary is "the
+ * app's primary action" (Save, Seed, Simulate). White-on-black is how
+ * razorpay.com states that; a green button would compete with the money
+ * figures for the reader's "this is the good number" instinct, and a blue
+ * one reads as a link. */
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--cta);
+  border-color: var(--cta);
+  color: var(--on-cta);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
+  background: var(--cta-hover);
+  border-color: var(--cta-hover);
 }
 
 .btn:disabled {
@@ -325,7 +428,7 @@ table {
 }
 
 .input:hover {
-  border-color: var(--muted);
+  border-color: rgb(255 255 255 / 0.35);
 }
 
 .input::placeholder {
@@ -347,96 +450,132 @@ table {
 }
 
 .select:hover {
-  border-color: var(--muted);
+  border-color: rgb(255 255 255 / 0.35);
 }
 
 /* ------------------------------------------------------------------ shell */
 
+/* One column: a sticky app bar carrying brand, primary nav and the pipeline
+ * pill, the content column centred beneath it, a slim footer. No side rail —
+ * razorpay.com's chrome is a single black bar across the top, and a 232px
+ * rail on --surface-2 was the single loudest "generic admin panel" tell in
+ * the old shell. */
 .shell {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
-/* The sidebar sits on --surface-2 so the content column reads as the lit
- * surface and the chrome recedes. Sticky, not fixed: it keeps its place in
- * flow, so the content column needs no compensating margin. */
-.sidebar {
+.appbar {
+  /* Sticky, not fixed: it keeps its place in flow, so .content needs no
+   * compensating margin. */
   position: sticky;
   top: 0;
-  align-self: flex-start;
-  width: 232px;
-  flex-shrink: 0;
-  height: 100vh;
-  background: var(--surface-2);
-  border-right: 1px solid var(--line);
-  padding: var(--space-5) var(--space-3);
+  z-index: 2;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--appbar-h);
+  padding: 0 var(--space-8);
+  /* Translucent black, not --surface: the bar has to read as the same black
+   * as the page with the beams showing through it, and blur.high (Blade's
+   * heaviest backdrop step) is what keeps text legible over them as the
+   * page scrolls. */
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(var(--blur-high));
+  -webkit-backdrop-filter: blur(var(--blur-high));
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
 }
 
 .brand {
-  display: flex;
-  align-items: baseline;
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-3);
-  margin-bottom: var(--space-6);
+  color: var(--ink);
+  text-decoration: none;
+  flex-shrink: 0;
 }
 
 .brand-mark {
-  font-size: var(--text-md);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .brand-sub {
   font-size: var(--text-xs);
   color: var(--muted);
   letter-spacing: 0.02em;
+  margin-left: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--line-strong);
+  line-height: 1.6;
+}
+
+/* Text links across the bar, exactly where razorpay.com puts its own. Full
+ * bar height so the active underline sits on the bar's bottom edge. */
+.topnav {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  align-self: stretch;
+  flex: 1;
+  min-width: 0;
 }
 
 .nav-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0.45rem var(--space-3);
-  border-radius: var(--radius-sm);
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   text-decoration: none;
-  color: var(--muted);
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
   font-weight: 500;
-  /* 44px minimum touch target — the sidebar becomes a real tap target on
-   * the narrow layout, where these are the only navigation controls. */
-  min-height: 40px;
-  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+  /* 44px minimum touch target on the collapsed layout, where these are the
+   * only navigation controls; full bar height when wide. */
+  min-height: 44px;
+  transition: color var(--transition);
 }
 
 .nav-item:hover {
   color: var(--ink);
-  background: var(--surface);
 }
 
 /* Active state carries two independent signals — weight/colour and a solid
- * left rule — so it does not rest on colour alone. */
+ * rule along the bar's bottom edge — so it does not rest on colour alone.
+ * --brand, not --accent: this marks "where you are", a navigation concept,
+ * not a money one, and razorpay.com's own mint nav highlight would read as
+ * "recovered" in this palette. */
 .nav-item[aria-current='page'] {
   color: var(--ink);
-  background: var(--surface);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--brand);
 }
 
 .nav-label {
-  flex: 1;
+  flex: none;
 }
 
-.sidebar-foot {
-  margin-top: auto;
-  padding: var(--space-3);
-  border-top: 1px solid var(--line);
-  font-size: var(--text-xs);
-  color: var(--muted);
+.appbar-right {
+  margin-left: auto;
   display: flex;
   align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+/* The live LLM-pipeline indicator in the app bar. Extends .badge; the dot
+ * reuses .dot with `currentColor` so one element serves both the healthy
+ * (accent) and degraded (danger) palette without a second style block. */
+.pipeline-status {
+  padding: 0.35rem 0.8rem;
   gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 
 .dot {
@@ -447,56 +586,73 @@ table {
   flex-shrink: 0;
 }
 
+/* Centred container, razorpay.com's own ~1240px measure. min-width: 0 lets
+ * wide tables scroll inside instead of stretching the shell. */
 .content {
   flex: 1;
-  min-width: 0; /* lets wide tables scroll inside instead of stretching the shell */
-  padding: var(--space-8);
-  max-width: 1180px;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  min-width: 0;
+  padding: var(--space-8) var(--space-8) var(--space-6);
 }
 
-/* Below this the sidebar stops being a column and becomes a header strip
- * with a horizontally scrollable nav — a 232px rail on a 375px screen
- * leaves no usable content width. */
-@media (max-width: 900px) {
-  .shell {
-    flex-direction: column;
-  }
+/* The one-line thesis that used to live at the foot of the rail. */
+.foot {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-8) var(--space-8);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
 
-  .sidebar {
-    /* `relative`, not `static`: the wide layout's `sticky` happens to
-     * establish a containing block, so absolutely-positioned descendants
-     * (the .sr-only badge text, scrolled out of view in this row layout)
-     * are clipped by the overflow. Dropping to `static` here let them
-     * resolve against the page and widen the whole document. */
-    position: relative;
-    width: 100%;
+/* Below this the nav drops to its own horizontally scrollable row under the
+ * brand + pill — five text links plus a brand and a status pill don't fit
+ * one 375px row. The bar stays sticky as a whole; only its internal layout
+ * wraps. */
+@media (max-width: 760px) {
+  .appbar {
+    flex-wrap: wrap;
     height: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-2);
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-    padding: var(--space-3);
-    overflow-x: auto;
+    gap: 0 var(--space-4);
+    padding: var(--space-2) var(--space-4) 0;
   }
 
-  .brand {
-    margin-bottom: 0;
-    padding-left: var(--space-1);
-    flex-shrink: 0;
-  }
-
-  .brand-sub,
-  .sidebar-foot {
+  .brand-sub {
     display: none;
   }
 
-  .nav-item[aria-current='page'] {
-    box-shadow: inset 0 -2px 0 var(--accent);
+  .topnav {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+    /* A tap target's underline now doubles as the bar's bottom edge. */
+    margin: var(--space-1) calc(-1 * var(--space-4)) 0;
+    padding: 0 var(--space-2);
+    /* Scrolls by touch; a visible scrollbar under the links (desktop
+     * browsers at narrow widths draw one) reads as a broken border. */
+    scrollbar-width: none;
+  }
+
+  .topnav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .appbar-right {
+    min-height: 44px;
   }
 
   .content {
     padding: var(--space-5) var(--space-4);
+  }
+
+  .foot {
+    padding: var(--space-4) var(--space-4) var(--space-6);
   }
 }
 
@@ -517,14 +673,16 @@ table {
 .page-head {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  margin-bottom: var(--space-2);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .page-sub {
   color: var(--muted);
-  font-size: var(--text-sm);
-  max-width: 68ch;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  max-width: 62ch;
+  margin: 0;
 }
 
 /* auto-fit rather than a fixed 1fr 1fr: the counters are the hero and must
@@ -533,6 +691,27 @@ table {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: var(--space-4);
+}
+
+/* The dashboard's chart-and-context pair: ClassBreakdown needs the room to
+ * stay legible, ControlGroupPanel is a narrower stat block, so an uneven
+ * split reads better than two equal columns. Collapses to one column at the
+ * same width the rest of the shell does, rather than compressing both to
+ * illegible slivers. */
+.dashboard-split {
+  display: grid;
+  /* minmax(0, ...), not bare fr tracks — see .cases-layout / .case-detail-layout
+   * for the concrete overflow this exact pattern caused elsewhere; fixing
+   * it here too before it has the chance to. */
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dashboard-split {
+    grid-template-columns: 1fr;
+  }
 }
 
 .row-between {
@@ -556,10 +735,11 @@ table {
 /* ------------------------------------------------------------------ stats */
 
 .stat-value {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 
@@ -571,39 +751,86 @@ table {
 
 /* ----------------------------------------------------------------- funnel */
 
-.funnel {
+/* Horizontal steps, not stacked bars — see FunnelChart.tsx for why. Wraps
+ * to two rows on narrow screens rather than scrolling: the arrow is decor,
+ * so a step reflowing under its neighbour loses nothing a reader needs. */
+.funnel-flow {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-3) 0;
 }
 
-.funnel-head {
+.funnel-step {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
+  align-items: center;
+  flex: 1;
+  min-width: 140px;
 }
 
-.funnel-track {
-  height: 8px;
-  border-radius: 4px;
+.funnel-arrow {
+  color: var(--line-strong);
+  font-size: var(--text-lg);
+  flex-shrink: 0;
+  padding: 0 var(--space-3);
+  align-self: center;
+}
+
+.funnel-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.funnel-step-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --text-xl exists for exactly this: a number that needs to read as data at
+ * a glance, one step down from the dashboard's own hero figures. */
+.funnel-step-value {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.funnel-step-share {
+  font-size: var(--text-sm);
+}
+
+/* min-height reserves two lines' worth of space even for a hint that only
+ * needs one — .funnel-step is centered on its own natural height
+ * (.funnel-flow doesn't stretch steps to a common height), so a step whose
+ * hint wraps to two lines is taller than one that doesn't, and their
+ * arrows (each centered within its own step) land at different Y
+ * positions. Equalising every step's reserved height here is what keeps
+ * the arrows level across the row, not the arrows' own styling. */
+.funnel-step-hint {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  min-height: 2.8em;
+  margin-top: var(--space-1);
+}
+
+.funnel-step-bar {
+  height: 6px;
+  border-radius: 3px;
   background: var(--surface-2);
   overflow: hidden;
+  margin: var(--space-2) 0;
 }
 
-.funnel-fill {
+.funnel-step-bar-fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--accent);
   transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.funnel-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-md);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- tooltip */
@@ -627,7 +854,10 @@ table {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface);
+  /* Same raised tile as .card — the cases list sits directly on the ground,
+   * not inside a card, and must lift off black the same way. */
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
 }
 
 .data-table {
@@ -663,6 +893,48 @@ table {
 
 .data-table tbody tr:hover td {
   background: var(--surface-2);
+}
+
+/* Dense variant for the docked list pane only (>=1100px, where
+ * .cases-list-pane actually sits beside the detail pane at as little as
+ * ~360-440px) — the table's own 780px min-width made Status render cut off
+ * mid-badge there, since .table-wrap's overflow-x: auto left it scrolled
+ * to its own left edge with no indication there was more to see. Recovered
+ * and Opened both duplicate what the docked detail pane already shows once
+ * a case is selected, so dropping them here loses nothing; the order id
+ * gets a wrap point since it's one unbroken token that otherwise can't
+ * shrink below its own width in a narrow column. */
+@media (min-width: 1100px) {
+  .cases-list-pane .data-table {
+    min-width: 0;
+    font-size: var(--text-sm);
+  }
+
+  .cases-list-pane .data-table th,
+  .cases-list-pane .data-table td {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* Truncated to one line with an ellipsis, not wrapped: order_xxxxxxxx is
+   * one unbroken token, and letting it wrap (overflow-wrap: anywhere)
+   * turned each id into a ragged 3-4 line stack that made every row far
+   * taller than its neighbours. The full id is one click away in the
+   * detail pane once a case is selected. */
+  .cases-list-pane .data-table .link-id {
+    display: inline-block;
+    max-width: 108px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+
+  .cases-list-pane .data-table th:nth-child(6),
+  .cases-list-pane .data-table td:nth-child(6),
+  .cases-list-pane .data-table th:nth-child(7),
+  .cases-list-pane .data-table td:nth-child(7) {
+    display: none;
+  }
 }
 
 .num {
@@ -701,6 +973,83 @@ table {
   color: var(--accent);
 }
 
+/* ------------------------------------------------------------- cases layout */
+
+/* Single column below 1100px — a list pane and a detail pane both need real
+ * width to be usable, and there isn't room for both below that. See
+ * CasesPage.tsx for how `--collapsed` is decided. */
+.cases-layout {
+  display: block;
+}
+
+@media (min-width: 1100px) {
+  .cases-layout {
+    display: grid;
+    /* minmax(0, 1fr), not bare 1fr: a bare 1fr track won't shrink below its
+     * content's min-content size, which is exactly how .content needed
+     * min-width: 0 and .tl-item needed minmax(0, 1fr) elsewhere in this
+     * file — the same defect, here reachable only once something wide
+     * (case-detail-layout, nested inside this pane) tries to sit in the
+     * second column. Confirmed by document.documentElement.scrollWidth
+     * exceeding clientWidth before this fix. */
+    grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .cases-list-pane {
+    /* Stays in view while a long case list scrolls the detail pane's
+     * content past it — pinned just below the sticky app bar. */
+    position: sticky;
+    top: var(--appbar-h);
+  }
+
+  /* min-width: 0 on the ITEM, not just minmax(0, 1fr) on the track above:
+   * a grid item's own inline-axis min-width defaults to auto (its
+   * min-content size), which is wide enough here — CaseDetailPage nests
+   * its own two-column grid inside this pane — to overflow the track even
+   * though the track itself can shrink to 0. Same fix CaseTimeline's own
+   * .tl-body already needed, one level further out. Dropping this
+   * reintroduces measured document-level horizontal scroll at ~1265-1284px
+   * viewports. */
+  .cases-detail-pane {
+    min-width: 0;
+  }
+}
+
+/* Query container for .case-detail-layout below: that layout's own
+ * two-column split needs to know how much width THIS pane actually has,
+ * not the viewport's. Unconditional (not gated by the 1100px media query
+ * above) because the pane is the layout's parent at every width — narrow
+ * when docked beside the cases list, full content width when standalone
+ * below 1100px or on a direct /cases/:id link. */
+.cases-detail-pane {
+  container-type: inline-size;
+}
+
+@media (max-width: 1099px) {
+  .cases-list-pane--collapsed,
+  .cases-detail-pane--collapsed {
+    display: none;
+  }
+}
+
+/* Opts OUT of .card's new elevation rather than into it: this is a resting
+ * placeholder with nothing on it, not a data tile, so it stays flat and
+ * recessed instead of competing with the docked list beside it for
+ * attention. Smaller than the old 220px, too — the hint doesn't need to
+ * fill the same vertical space a populated detail view would. */
+.cases-empty-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  text-align: center;
+  background: var(--surface-2);
+  border-style: dashed;
+  box-shadow: none;
+}
+
 /* ---------------------------------------------------------------- filters */
 
 .filter-bar {
@@ -727,11 +1076,17 @@ table {
   color: var(--muted);
 }
 
+/* flex-basis: 100% forces a line break before this item regardless of how
+ * many of the three .fields above fit per row — at the docked pane's
+ * narrower widths that's sometimes 2, sometimes 1, and the count used to
+ * share a flex-wrap group. Pinning it here always keeps it own its own
+ * trailing line instead of sharing an uneven leftover row. */
 .result-count {
-  margin-left: auto;
+  flex-basis: 100%;
+  margin-top: var(--space-2);
+  text-align: right;
   font-size: var(--text-sm);
   color: var(--muted);
-  padding-bottom: var(--space-2);
 }
 
 /* --------------------------------------------------------------- timeline */
@@ -869,6 +1224,64 @@ table {
 
 /* ----------------------------------------------------------- detail facts */
 
+/* Facts rail beside the timeline, not stacked above it, once the pane
+ * hosting this layout has >=600px to give it — a phone still gets the old
+ * top-to-bottom reading order, since neither column has room to sit beside
+ * the other there.
+ *
+ * A @container query on .cases-detail-pane's inline size, not a @media
+ * query on the viewport: this layout is always rendered inside that pane
+ * (see CasesPage.tsx's <Outlet/>), which is only ever the full content
+ * width when standalone. When docked beside the cases list at >=1100px
+ * viewport width, the pane itself can be as narrow as ~245px — a @media
+ * query on the viewport fired there anyway, splitting into a 240px rail +
+ * a timeline column with no room left for its own 150px timestamp column,
+ * which is how the fixed columns forced real document-level horizontal
+ * overflow (measured: scrollWidth 1284 vs clientWidth 1265) that
+ * minmax(0, 1fr) and min-width: 0 alone could not fix — there was
+ * genuinely no space, not just an unshrunk track.
+ *
+ * 600px, not 720px: .content cellings out at max-width: 1180px, so the
+ * docked pane itself plateaus at 652px no matter how wide the window
+ * gets — a 720px threshold would make this split unreachable in the
+ * docked path entirely, the one most clicks actually take. Measured
+ * 652px comfortably fits a 240px rail + a ~350px timeline column at
+ * every width that clears 600px. */
+.case-detail-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+@container (min-width: 600px) {
+  .case-detail-layout {
+    display: grid;
+    /* minmax(0, 1fr), not bare 1fr — see the identical comment on
+     * .cases-layout above; this is the same defect, and this is the
+     * layout that actually exposed it (nested inside that docked pane, at
+     * a viewport where both split simultaneously). */
+    grid-template-columns: 240px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-5);
+  }
+
+  .case-facts-rail {
+    position: sticky;
+    top: var(--appbar-h);
+  }
+
+  /* The order id is one unbroken 20-character mono token; at 20px it is
+   * wider than the 240px rail minus its padding and ran out past the card's
+   * edge when docked. Let it break rather than clip — this is the one place
+   * the full id must be readable. */
+  .case-facts-rail h1 {
+    overflow-wrap: anywhere;
+  }
+
+  /* .case-timeline-col is a .card, so it already has min-width: 0 from
+   * that base rule — no extra rule needed here. */
+}
+
 .facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
@@ -916,6 +1329,24 @@ table {
   border-left-color: var(--control);
 }
 
+/* The cause-first summary above the triage list: which rule stopped how
+ * many cases. Given more visual weight than a chip buried in a card used
+ * to carry, since this is the thing an operator reads first. */
+.rule-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.rule-summary-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* Small key/value chips summarising a queue by rule. */
 .chip-row {
   display: flex;
@@ -927,17 +1358,65 @@ table {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0.2rem 0.55rem;
-  border: 1px solid var(--line);
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
 }
 
 .chip-count {
   font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
+}
+
+/* --------------------------------------------------------------- triage */
+
+/* One row per escalated case — dense, not a fat card, so a queue in the
+ * dozens reads as a scannable list rather than a stack of full-width
+ * panels. The rule-level story lives in .rule-summary above; each row
+ * only needs to carry what's specific to that one case. */
+.triage-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.triage-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.triage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Pushes the verdict badge to the row's far right while id + meta stay
+ * clustered on the left — same left/right split .row-between gives a
+ * two-child row, done with an auto margin since this row has three. */
+.triage-meta {
+  font-size: var(--text-xs);
+  margin-right: auto;
+}
+
+.triage-reason {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.triage-action {
+  margin-top: var(--space-1);
 }
 
 /* --------------------------------------------------------- resolve form */
@@ -954,13 +1433,63 @@ table {
   min-width: 240px;
 }
 
-/* ------------------------------------------------------------- demo steps */
+/* ----------------------------------------------------------- demo console */
 
-.step-head {
+/* The three demo actions side by side, in run order, instead of three
+ * full-width cards stacked top to bottom — a run-through is one reach
+ * across the strip rather than a scroll past however many cards precede
+ * the one you want. Single column below 900px: three controls plus their
+ * own inputs and captions genuinely need real width each. */
+.demo-strip {
   display: flex;
-  align-items: center;
+  gap: var(--space-6);
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .demo-strip {
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+}
+
+.demo-control {
+  display: flex;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.demo-control-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.demo-control-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin: 0;
+}
+
+.demo-control-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .demo-control-divider {
+    display: none;
+  }
+}
+
+.demo-readouts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .step-num {
